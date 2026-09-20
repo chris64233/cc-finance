@@ -1,6 +1,6 @@
 # cc-finance
 
-cc-finance 是一个面向企业财务场景的 Spring Boot 后端项目，当前提供会计科目管理和记账凭证入账能力。
+cc-finance 是一个面向企业财务场景的 Spring Boot 后端项目，当前提供会计科目管理、会计期间管理和记账凭证入账能力。
 
 ## 环境
 
@@ -20,6 +20,32 @@ cc-finance 是一个面向企业财务场景的 Spring Boot 后端项目，当�
     ./mvnw spring-boot:run
 
 ## 主要接口
+
+### 会计期间
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| POST | `/api/periods` | 创建会计期间（按年月，重复返回 409） |
+| GET | `/api/periods` | 查询全部会计期间（按期间编码升序） |
+| GET | `/api/periods/{periodCode}` | 按期间编码查询，不存在返回 404 |
+| POST | `/api/periods/{periodCode}/close` | 关账（幂等，重复关账返回当前结果） |
+
+期间规则：
+
+- 期间按月份管理，创建时传入 `year`（1900-2100）和 `month`（1-12），系统生成 `YYYY-MM` 格式的期间编码，并保存开始日期、结束日期、状态、创建时间和关账时间。
+- 状态只支持 `OPEN` 和 `CLOSED`，新建期间默认为 `OPEN`；同一年月只能有一条记录（数据库唯一约束）。
+- 关账只允许把 `OPEN` 期间改为 `CLOSED` 并记录关账时间；重复关账直接返回当前结果，关账时间不变。
+- 关账与凭证入账通过对期间记录的数据库行锁（`SELECT ... FOR UPDATE`）保证并发一致：关账成功后该期间不再接受新凭证。
+
+创建期间：
+
+    curl -X POST http://localhost:8080/api/periods \
+      -H 'Content-Type: application/json' \
+      -d '{"year": 2026, "month": 9}'
+
+关账：
+
+    curl -X POST http://localhost:8080/api/periods/2026-09/close
 
 ### 会计科目
 
@@ -50,6 +76,7 @@ cc-finance 是一个面向企业财务场景的 Spring Boot 后端项目，当�
 
 入账规则：
 
+- 按 `voucherDate` 匹配对应月份的会计期间：期间不存在时拒绝入账并返回 422；期间已关账时返回 409；校验失败不会留下凭证或分录数据。
 - 每张凭证至少两条分录，方向为 `DEBIT` / `CREDIT`，金额必须大于 0 且最多两位小数（BigDecimal 处理）。
 - 入账前校验借方合计等于贷方合计，且所有科目存在并处于启用状态；任一条件不满足则整张凭证不落库。
 - 入账成功后生成唯一且不可变的凭证号（如 `JV-00000001`），返回分录顺序与请求一致。
@@ -85,4 +112,4 @@ cc-finance 是一个面向企业财务场景的 Spring Boot 后端项目，当�
       "path": "/api/vouchers/JV-99999999"
     }
 
-主要业务错误码：`ACCOUNT_ALREADY_EXISTS`、`ACCOUNT_NOT_FOUND`、`ACCOUNT_DISABLED`、`VOUCHER_NOT_BALANCED`、`VOUCHER_NOT_FOUND`、`IDEMPOTENCY_CONFLICT`、`VALIDATION_ERROR`。
+主要业务错误码：`ACCOUNT_ALREADY_EXISTS`、`ACCOUNT_NOT_FOUND`、`ACCOUNT_DISABLED`、`PERIOD_ALREADY_EXISTS`、`PERIOD_NOT_FOUND`、`PERIOD_CLOSED`、`VOUCHER_NOT_BALANCED`、`VOUCHER_NOT_FOUND`、`IDEMPOTENCY_CONFLICT`、`VALIDATION_ERROR`。

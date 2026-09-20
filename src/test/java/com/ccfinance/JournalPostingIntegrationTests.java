@@ -6,6 +6,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.time.LocalDate;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,6 +18,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
 import com.ccfinance.account.AccountRepository;
+import com.ccfinance.period.AccountingPeriod;
+import com.ccfinance.period.AccountingPeriodRepository;
 import com.ccfinance.voucher.VoucherRepository;
 
 @SpringBootTest
@@ -31,10 +35,16 @@ class JournalPostingIntegrationTests {
     @Autowired
     private VoucherRepository voucherRepository;
 
+    @Autowired
+    private AccountingPeriodRepository periodRepository;
+
     @BeforeEach
     void cleanDatabase() {
         voucherRepository.deleteAll();
         accountRepository.deleteAll();
+        periodRepository.deleteAll();
+        periodRepository.save(new AccountingPeriod("2026-09", 2026, 9,
+                LocalDate.of(2026, 9, 1), LocalDate.of(2026, 9, 30)));
     }
 
     @Test

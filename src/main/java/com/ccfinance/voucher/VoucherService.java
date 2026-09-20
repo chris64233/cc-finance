@@ -15,6 +15,10 @@ import org.springframework.transaction.annotation.Transactional;
 import com.ccfinance.account.Account;
 import com.ccfinance.account.AccountRepository;
 import com.ccfinance.common.ApiException;
+import com.ccfinance.period.AccountingPeriod;
+import com.ccfinance.period.AccountingPeriodRepository;
+import com.ccfinance.period.PeriodService;
+import com.ccfinance.period.PeriodStatus;
 import com.ccfinance.voucher.dto.EntryRequest;
 import com.ccfinance.voucher.dto.VoucherRequest;
 import com.ccfinance.voucher.dto.VoucherResponse;
@@ -24,10 +28,13 @@ public class VoucherService {
 
     private final VoucherRepository voucherRepository;
     private final AccountRepository accountRepository;
+    private final AccountingPeriodRepository periodRepository;
 
-    public VoucherService(VoucherRepository voucherRepository, AccountRepository accountRepository) {
+    public VoucherService(VoucherRepository voucherRepository, AccountRepository accountRepository,
+            AccountingPeriodRepository periodRepository) {
         this.voucherRepository = voucherRepository;
         this.accountRepository = accountRepository;
+        this.periodRepository = periodRepository;
     }
 
     @Transactional
@@ -43,6 +50,16 @@ public class VoucherService {
             }
             throw new ApiException(HttpStatus.CONFLICT, "IDEMPOTENCY_CONFLICT",
                     "业务唯一号已存在且请求内容不一致: " + bizKey);
+        }
+
+        String periodCode = PeriodService.periodCodeOf(request.voucherDate().getYear(),
+                request.voucherDate().getMonthValue());
+        AccountingPeriod period = periodRepository.findByPeriodCodeForUpdate(periodCode)
+                .orElseThrow(() -> new ApiException(HttpStatus.UNPROCESSABLE_ENTITY,
+                        "PERIOD_NOT_FOUND", "会计期间不存在: " + periodCode));
+        if (period.getStatus() == PeriodStatus.CLOSED) {
+            throw new ApiException(HttpStatus.CONFLICT, "PERIOD_CLOSED",
+                    "会计期间已关账: " + periodCode);
         }
 
         BigDecimal debitTotal = BigDecimal.ZERO.setScale(2, RoundingMode.UNNECESSARY);
