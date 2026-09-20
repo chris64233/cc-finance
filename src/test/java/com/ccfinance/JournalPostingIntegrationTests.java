@@ -16,6 +16,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
 import com.ccfinance.account.AccountRepository;
+import com.ccfinance.period.AccountingPeriod;
+import com.ccfinance.period.PeriodRepository;
 import com.ccfinance.voucher.VoucherRepository;
 
 @SpringBootTest
@@ -31,10 +33,15 @@ class JournalPostingIntegrationTests {
     @Autowired
     private VoucherRepository voucherRepository;
 
+    @Autowired
+    private PeriodRepository periodRepository;
+
     @BeforeEach
     void cleanDatabase() {
         voucherRepository.deleteAll();
         accountRepository.deleteAll();
+        periodRepository.deleteAll();
+        periodRepository.saveAndFlush(new AccountingPeriod(2026, 9));
     }
 
     @Test

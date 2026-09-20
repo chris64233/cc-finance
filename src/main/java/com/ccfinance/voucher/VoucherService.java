@@ -15,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.ccfinance.account.Account;
 import com.ccfinance.account.AccountRepository;
 import com.ccfinance.common.ApiException;
+import com.ccfinance.period.PeriodService;
 import com.ccfinance.voucher.dto.EntryRequest;
 import com.ccfinance.voucher.dto.VoucherRequest;
 import com.ccfinance.voucher.dto.VoucherResponse;
@@ -24,10 +25,13 @@ public class VoucherService {
 
     private final VoucherRepository voucherRepository;
     private final AccountRepository accountRepository;
+    private final PeriodService periodService;
 
-    public VoucherService(VoucherRepository voucherRepository, AccountRepository accountRepository) {
+    public VoucherService(VoucherRepository voucherRepository, AccountRepository accountRepository,
+            PeriodService periodService) {
         this.voucherRepository = voucherRepository;
         this.accountRepository = accountRepository;
+        this.periodService = periodService;
     }
 
     @Transactional
@@ -44,6 +48,8 @@ public class VoucherService {
             throw new ApiException(HttpStatus.CONFLICT, "IDEMPOTENCY_CONFLICT",
                     "业务唯一号已存在且请求内容不一致: " + bizKey);
         }
+
+        periodService.requireOpenPeriodForUpdate(request.voucherDate());
 
         BigDecimal debitTotal = BigDecimal.ZERO.setScale(2, RoundingMode.UNNECESSARY);
         BigDecimal creditTotal = BigDecimal.ZERO.setScale(2, RoundingMode.UNNECESSARY);
