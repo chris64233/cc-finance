@@ -9,4 +9,8 @@ public interface VoucherRepository extends JpaRepository<JournalVoucher, Long> {
     Optional<JournalVoucher> findByBizKey(String bizKey);
 
     Optional<JournalVoucher> findByVoucherNo(String voucherNo);
+
+    Optional<JournalVoucher> findByReversalOfVoucherNo(String reversalOfVoucherNo);
+
+    boolean existsByReversalOfVoucherNo(String reversalOfVoucherNo);
 }

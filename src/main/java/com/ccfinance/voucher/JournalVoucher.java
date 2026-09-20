@@ -23,7 +23,8 @@ import jakarta.persistence.UniqueConstraint;
 @Entity
 @Table(name = "journal_vouchers", uniqueConstraints = {
         @UniqueConstraint(name = "uk_journal_vouchers_voucher_no", columnNames = "voucher_no"),
-        @UniqueConstraint(name = "uk_journal_vouchers_biz_key", columnNames = "biz_key")
+        @UniqueConstraint(name = "uk_journal_vouchers_biz_key", columnNames = "biz_key"),
+        @UniqueConstraint(name = "uk_journal_vouchers_reversal_of", columnNames = "reversal_of_voucher_no")
 })
 public class JournalVoucher {
 
@@ -60,6 +61,9 @@ public class JournalVoucher {
     @Column(nullable = false, length = 64)
     private String requestFingerprint;
 
+    @Column(name = "reversal_of_voucher_no", length = 32)
+    private String reversalOfVoucherNo;
+
     @OneToMany(mappedBy = "voucher", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("lineNo ASC")
     private List<JournalEntry> entries = new ArrayList<>();
@@ -87,6 +91,10 @@ public class JournalVoucher {
 
     public void assignVoucherNo() {
         this.voucherNo = "JV-" + String.format("%08d", id);
+    }
+
+    public void markAsReversalOf(String originalVoucherNo) {
+        this.reversalOfVoucherNo = originalVoucherNo;
     }
 
     public Long getId() {
@@ -127,6 +135,10 @@ public class JournalVoucher {
 
     public String getRequestFingerprint() {
         return requestFingerprint;
+    }
+
+    public String getReversalOfVoucherNo() {
+        return reversalOfVoucherNo;
     }
 
     public List<JournalEntry> getEntries() {

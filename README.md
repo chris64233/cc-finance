@@ -72,6 +72,7 @@ cc-finance 是一个面向企业财务场景的 Spring Boot 后端项目，当�
 | --- | --- | --- |
 | POST | `/api/vouchers` | 凭证入账（同一事务写入凭证与分录） |
 | GET | `/api/vouchers/{voucherNo}` | 按凭证号查询完整凭证，不存在返回 404 |
+| POST | `/api/vouchers/{voucherNo}/reversal` | 按原凭证号发起冲销，生成借贷方向相反的 POSTED 凭证 |
 
 入账规则：
 
@@ -106,6 +107,23 @@ cc-finance 是一个面向企业财务场景的 Spring Boot 后端项目，当�
 
     curl http://localhost:8080/api/vouchers/JV-00000001
 
+### 凭证冲销
+
+冲销规则：
+
+- 按原凭证号发起冲销，请求传入新的 `bizKey`、冲销日期 `voucherDate` 和可选摘要 `summary`（缺省时自动生成“冲销 {原凭证号}”）。
+- 成功后生成一张新的 `POSTED` 凭证：分录顺序、科目和金额与原凭证一致，借贷方向相反；原凭证和原分录不会被修改。
+- 查询原凭证或冲销凭证时可通过 `reversedByVoucherNo` / `reversalOfVoucherNo` 字段看到两者的关联。
+- 冲销日期对应的会计期间必须存在且处于 `OPEN` 状态：期间不存在返回 422，期间已关账返回 409；校验失败不会留下任何凭证或分录数据。
+- 同一张原凭证最多只能生成一张冲销凭证（数据库唯一约束）：相同 `bizKey` 且请求内容一致时返回首次生成的冲销凭证；请求内容不一致，或用其他 `bizKey` 再次冲销同一原凭证时返回 409。
+- 冲销凭证不能再次冲销（返回 409），原凭证不存在时返回 404。
+
+凭证冲销：
+
+    curl -X POST http://localhost:8080/api/vouchers/JV-00000001/reversal \
+      -H 'Content-Type: application/json' \
+      -d '{"bizKey": "REV-001", "voucherDate": "2026-09-20", "summary": "冲销销售回款"}'
+
 ## 错误响应
 
 所有错误统一返回 JSON，不暴露堆栈，例如：
@@ -118,4 +136,4 @@ cc-finance 是一个面向企业财务场景的 Spring Boot 后端项目，当�
       "path": "/api/vouchers/JV-99999999"
     }
 
-主要业务错误码：`ACCOUNT_ALREADY_EXISTS`、`ACCOUNT_NOT_FOUND`、`ACCOUNT_DISABLED`、`PERIOD_ALREADY_EXISTS`、`PERIOD_NOT_FOUND`、`PERIOD_CLOSED`、`VOUCHER_NOT_BALANCED`、`VOUCHER_NOT_FOUND`、`IDEMPOTENCY_CONFLICT`、`VALIDATION_ERROR`。
+主要业务错误码：`ACCOUNT_ALREADY_EXISTS`、`ACCOUNT_NOT_FOUND`、`ACCOUNT_DISABLED`、`PERIOD_ALREADY_EXISTS`、`PERIOD_NOT_FOUND`、`PERIOD_CLOSED`、`VOUCHER_NOT_BALANCED`、`VOUCHER_NOT_FOUND`、`VOUCHER_ALREADY_REVERSED`、`REVERSAL_NOT_ALLOWED`、`IDEMPOTENCY_CONFLICT`、`VALIDATION_ERROR`。
