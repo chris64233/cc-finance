@@ -17,9 +17,15 @@ public record VoucherResponse(
         BigDecimal debitTotal,
         BigDecimal creditTotal,
         Instant createdAt,
+        String reversedVoucherNo,
+        String reversalVoucherNo,
         List<EntryResponse> entries) {
 
     public static VoucherResponse from(JournalVoucher voucher) {
+        return from(voucher, null);
+    }
+
+    public static VoucherResponse from(JournalVoucher voucher, String reversalVoucherNo) {
         return new VoucherResponse(
                 voucher.getVoucherNo(),
                 voucher.getBizKey(),
@@ -29,6 +35,8 @@ public record VoucherResponse(
                 voucher.getDebitTotal(),
                 voucher.getCreditTotal(),
                 voucher.getCreatedAt(),
+                voucher.getReversedVoucherNo(),
+                reversalVoucherNo,
                 voucher.getEntries().stream().map(EntryResponse::from).toList());
     }
 }

@@ -23,7 +23,8 @@ import jakarta.persistence.UniqueConstraint;
 @Entity
 @Table(name = "journal_vouchers", uniqueConstraints = {
         @UniqueConstraint(name = "uk_journal_vouchers_voucher_no", columnNames = "voucher_no"),
-        @UniqueConstraint(name = "uk_journal_vouchers_biz_key", columnNames = "biz_key")
+        @UniqueConstraint(name = "uk_journal_vouchers_biz_key", columnNames = "biz_key"),
+        @UniqueConstraint(name = "uk_journal_vouchers_reversed_voucher_no", columnNames = "reversed_voucher_no")
 })
 public class JournalVoucher {
 
@@ -60,6 +61,9 @@ public class JournalVoucher {
     @Column(nullable = false, length = 64)
     private String requestFingerprint;
 
+    @Column(name = "reversed_voucher_no", length = 32)
+    private String reversedVoucherNo;
+
     @OneToMany(mappedBy = "voucher", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("lineNo ASC")
     private List<JournalEntry> entries = new ArrayList<>();
@@ -78,6 +82,18 @@ public class JournalVoucher {
         this.creditTotal = creditTotal;
         this.createdAt = Instant.now();
         this.requestFingerprint = requestFingerprint;
+    }
+
+    public static JournalVoucher createReversal(String bizKey, LocalDate reversalDate, String summary,
+            JournalVoucher original, String requestFingerprint) {
+        JournalVoucher reversal = new JournalVoucher(bizKey, reversalDate, summary,
+                original.getDebitTotal(), original.getCreditTotal(), requestFingerprint);
+        reversal.reversedVoucherNo = original.getVoucherNo();
+        for (JournalEntry entry : original.getEntries()) {
+            reversal.addEntry(new JournalEntry(entry.getLineNo(), entry.getAccountCode(),
+                    entry.getDirection().opposite(), entry.getAmount(), entry.getSummary()));
+        }
+        return reversal;
     }
 
     public void addEntry(JournalEntry entry) {
@@ -127,6 +143,14 @@ public class JournalVoucher {
 
     public String getRequestFingerprint() {
         return requestFingerprint;
+    }
+
+    public String getReversedVoucherNo() {
+        return reversedVoucherNo;
+    }
+
+    public boolean isReversal() {
+        return reversedVoucherNo != null;
     }
 
     public List<JournalEntry> getEntries() {

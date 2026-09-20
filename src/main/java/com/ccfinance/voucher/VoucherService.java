@@ -17,6 +17,7 @@ import com.ccfinance.account.AccountRepository;
 import com.ccfinance.common.ApiException;
 import com.ccfinance.period.PeriodService;
 import com.ccfinance.voucher.dto.EntryRequest;
+import com.ccfinance.voucher.dto.ReversalRequest;
 import com.ccfinance.voucher.dto.VoucherRequest;
 import com.ccfinance.voucher.dto.VoucherResponse;
 
@@ -95,12 +96,61 @@ public class VoucherService {
         return VoucherResponse.from(voucher);
     }
 
-    @Transactional(readOnly = true)
-    public VoucherResponse getByVoucherNo(String voucherNo) {
-        return voucherRepository.findByVoucherNo(voucherNo)
-                .map(VoucherResponse::from)
+    @Transactional
+    public VoucherResponse reverse(String voucherNo, ReversalRequest request) {
+        JournalVoucher original = voucherRepository.findByVoucherNo(voucherNo)
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "VOUCHER_NOT_FOUND",
                         "凭证不存在: " + voucherNo));
+        if (original.isReversal()) {
+            throw new ApiException(HttpStatus.CONFLICT, "VOUCHER_NOT_REVERSIBLE",
+                    "冲销凭证不能再次冲销: " + voucherNo);
+        }
+
+        String bizKey = request.bizKey().trim();
+        String fingerprint = fingerprint(request, voucherNo);
+
+        var existingReversal = voucherRepository.findByReversedVoucherNo(voucherNo);
+        if (existingReversal.isPresent()) {
+            JournalVoucher reversal = existingReversal.get();
+            if (reversal.getBizKey().equals(bizKey)
+                    && reversal.getRequestFingerprint().equals(fingerprint)) {
+                return VoucherResponse.from(reversal);
+            }
+            throw new ApiException(HttpStatus.CONFLICT, "REVERSAL_CONFLICT",
+                    "原凭证已生成冲销凭证，且请求内容不一致: " + voucherNo);
+        }
+
+        if (voucherRepository.findByBizKey(bizKey).isPresent()) {
+            throw new ApiException(HttpStatus.CONFLICT, "IDEMPOTENCY_CONFLICT",
+                    "业务唯一号已存在: " + bizKey);
+        }
+
+        periodService.requireOpenPeriodForUpdate(request.reversalDate());
+
+        String summary = request.summary() != null ? request.summary()
+                : "冲销 " + original.getVoucherNo();
+        JournalVoucher reversal = JournalVoucher.createReversal(bizKey, request.reversalDate(),
+                summary, original, fingerprint);
+        try {
+            voucherRepository.save(reversal);
+            reversal.assignVoucherNo();
+            voucherRepository.saveAndFlush(reversal);
+        } catch (DataIntegrityViolationException ex) {
+            throw new ApiException(HttpStatus.CONFLICT, "REVERSAL_CONFLICT",
+                    "原凭证已生成冲销凭证或业务唯一号冲突: " + voucherNo);
+        }
+        return VoucherResponse.from(reversal);
+    }
+
+    @Transactional(readOnly = true)
+    public VoucherResponse getByVoucherNo(String voucherNo) {
+        JournalVoucher voucher = voucherRepository.findByVoucherNo(voucherNo)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "VOUCHER_NOT_FOUND",
+                        "凭证不存在: " + voucherNo));
+        String reversalVoucherNo = voucherRepository.findByReversedVoucherNo(voucherNo)
+                .map(JournalVoucher::getVoucherNo)
+                .orElse(null);
+        return VoucherResponse.from(voucher, reversalVoucherNo);
     }
 
     private String fingerprint(VoucherRequest request) {
@@ -114,10 +164,22 @@ public class VoucherService {
                     .append(':').append(entry.amount().stripTrailingZeros().toPlainString())
                     .append(':').append(entry.summary() == null ? "" : entry.summary());
         }
+        return sha256(canonical.toString());
+    }
+
+    private String fingerprint(ReversalRequest request, String originalVoucherNo) {
+        String canonical = "REVERSAL|" + originalVoucherNo
+                + '|' + request.bizKey().trim()
+                + '|' + request.reversalDate()
+                + '|' + (request.summary() == null ? "" : request.summary());
+        return sha256(canonical);
+    }
+
+    private String sha256(String content) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
             return HexFormat.of().formatHex(
-                    digest.digest(canonical.toString().getBytes(StandardCharsets.UTF_8)));
+                    digest.digest(content.getBytes(StandardCharsets.UTF_8)));
         } catch (NoSuchAlgorithmException ex) {
             throw new IllegalStateException(ex);
         }

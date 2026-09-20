@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.ccfinance.voucher.dto.VoucherRequest;
+import com.ccfinance.voucher.dto.ReversalRequest;
 import com.ccfinance.voucher.dto.VoucherResponse;
 
 import jakarta.validation.Valid;
@@ -33,5 +34,12 @@ public class VoucherController {
     @GetMapping("/{voucherNo}")
     public VoucherResponse getByVoucherNo(@PathVariable String voucherNo) {
         return voucherService.getByVoucherNo(voucherNo);
+    }
+
+    @PostMapping("/{voucherNo}/reversals")
+    @ResponseStatus(HttpStatus.CREATED)
+    public VoucherResponse reverse(@PathVariable String voucherNo,
+            @Valid @RequestBody ReversalRequest request) {
+        return voucherService.reverse(voucherNo, request);
     }
 }
