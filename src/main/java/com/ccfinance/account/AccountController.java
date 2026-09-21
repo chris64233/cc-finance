@@ -37,6 +37,11 @@ public class AccountController {
         return accountService.getByCode(code);
     }
 
+    @PostMapping("/{code}/deactivate")
+    public AccountResponse deactivate(@PathVariable String code) {
+        return accountService.deactivate(code);
+    }
+
     @GetMapping
     public List<AccountResponse> list() {
         return accountService.list();

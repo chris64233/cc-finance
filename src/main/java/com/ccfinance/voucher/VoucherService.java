@@ -6,6 +6,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
+import java.util.List;
 
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
@@ -52,17 +53,15 @@ public class VoucherService {
 
         periodService.requireOpenPeriodForUpdate(request.voucherDate());
 
+        requireEnabledAccountsForUpdate(request.entries().stream()
+                .map(entry -> entry.accountCode().trim())
+                .distinct()
+                .sorted()
+                .toList());
+
         BigDecimal debitTotal = BigDecimal.ZERO.setScale(2, RoundingMode.UNNECESSARY);
         BigDecimal creditTotal = BigDecimal.ZERO.setScale(2, RoundingMode.UNNECESSARY);
         for (EntryRequest entry : request.entries()) {
-            String accountCode = entry.accountCode().trim();
-            Account account = accountRepository.findByCode(accountCode)
-                    .orElseThrow(() -> new ApiException(HttpStatus.UNPROCESSABLE_ENTITY,
-                            "ACCOUNT_NOT_FOUND", "科目不存在: " + accountCode));
-            if (!account.isEnabled()) {
-                throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY,
-                        "ACCOUNT_DISABLED", "科目已停用: " + accountCode);
-            }
             BigDecimal amount = entry.amount().setScale(2, RoundingMode.UNNECESSARY);
             if (entry.direction() == Direction.DEBIT) {
                 debitTotal = debitTotal.add(amount);
@@ -125,6 +124,12 @@ public class VoucherService {
 
         periodService.requireOpenPeriodForUpdate(request.voucherDate());
 
+        requireEnabledAccountsForUpdate(original.getEntries().stream()
+                .map(JournalEntry::getAccountCode)
+                .distinct()
+                .sorted()
+                .toList());
+
         String summary = (request.summary() == null || request.summary().isBlank())
                 ? "冲销 " + voucherNo
                 : request.summary();
@@ -152,6 +157,18 @@ public class VoucherService {
                     "业务唯一号已存在: " + bizKey);
         }
         return toResponse(reversal);
+    }
+
+    private void requireEnabledAccountsForUpdate(List<String> accountCodes) {
+        for (String accountCode : accountCodes) {
+            Account account = accountRepository.findByCodeForUpdate(accountCode)
+                    .orElseThrow(() -> new ApiException(HttpStatus.UNPROCESSABLE_ENTITY,
+                            "ACCOUNT_NOT_FOUND", "科目不存在: " + accountCode));
+            if (!account.isEnabled()) {
+                throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY,
+                        "ACCOUNT_DISABLED", "科目已停用: " + accountCode);
+            }
+        }
     }
 
     @Transactional(readOnly = true)

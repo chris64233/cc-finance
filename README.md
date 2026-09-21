@@ -53,8 +53,17 @@ cc-finance 是一个面向企业财务场景的 Spring Boot 后端项目，当�
 | POST | `/api/accounts` | 创建科目（编码唯一，重复返回 409） |
 | GET | `/api/accounts` | 查询全部科目 |
 | GET | `/api/accounts/{code}` | 按编码查询科目，不存在返回 404 |
+| POST | `/api/accounts/{code}/deactivate` | 停用科目（幂等，重复停用返回当前结果） |
 
 科目类别：`ASSET`（资产）、`LIABILITY`（负债）、`EQUITY`（所有者权益）、`REVENUE`（收入）、`EXPENSE`（费用）。
+
+停用规则：
+
+- 停用前根据该科目所有已入账（`POSTED`）凭证的分录计算累计借方和累计贷方发生额，冲销凭证与普通凭证一样参与计算；只有两者相等（余额为零）时才允许停用。
+- 余额不为零时返回 409（`ACCOUNT_BALANCE_NOT_ZERO`），科目状态保持不变；科目不存在时返回 404（`ACCOUNT_NOT_FOUND`）。
+- 停用成功后返回更新后的科目信息（`enabled=false`）；对已停用科目重复调用直接返回当前结果，不重复写入、不报错。
+- 已停用科目不能再用于新的凭证入账或冲销（返回 422，`ACCOUNT_DISABLED`）；已有凭证、历史查询和试算平衡表不受停用影响。
+- 停用与凭证入账通过数据库事务和科目行级悲观锁保证并发一致：停用先成功则引用该科目的入账失败；入账先成功则停用基于包含该凭证的最新余额判断，不会出现科目已停用却又写入新凭证的情况。
 
 创建科目：
 
@@ -65,6 +74,10 @@ cc-finance 是一个面向企业财务场景的 Spring Boot 后端项目，当�
 查询科目：
 
     curl http://localhost:8080/api/accounts/1001
+
+停用科目：
+
+    curl -X POST http://localhost:8080/api/accounts/1001/deactivate
 
 ### 记账凭证
 
@@ -82,6 +95,7 @@ cc-finance 是一个面向企业财务场景的 Spring Boot 后端项目，当�
 - 入账成功后生成唯一且不可变的凭证号（如 `JV-00000001`），返回分录顺序与请求一致。
 - `bizKey` 为业务唯一号（数据库唯一约束）：相同 `bizKey` 且请求内容一致时返回首次创建的凭证；内容不一致时返回 409。
 - 关账与同一期间的凭证入账通过数据库事务和行级悲观锁保证并发一致：关账成功后该期间不再接受新凭证。
+- 科目停用与引用该科目的凭证入账同样通过行级悲观锁串行化：入账按科目编码升序加锁并校验启用状态，避免与停用操作并发时产生不一致。
 
 凭证入账前需要先创建对应会计期间：
 
@@ -117,6 +131,7 @@ cc-finance 是一个面向企业财务场景的 Spring Boot 后端项目，当�
 - 冲销日期对应的会计期间必须存在且处于 `OPEN` 状态：期间不存在返回 422，期间已关账返回 409；校验失败不会留下任何凭证或分录数据。
 - 同一张原凭证最多只能生成一张冲销凭证（数据库唯一约束）：相同 `bizKey` 且请求内容一致时返回首次生成的冲销凭证；请求内容不一致，或用其他 `bizKey` 再次冲销同一原凭证时返回 409。
 - 冲销凭证不能再次冲销（返回 409），原凭证不存在时返回 404。
+- 冲销会生成新的入账凭证，因此原凭证分录引用的科目必须仍处于启用状态；科目已停用时返回 422（`ACCOUNT_DISABLED`），不会留下任何凭证或分录数据。
 
 凭证冲销：
 
@@ -175,4 +190,4 @@ cc-finance 是一个面向企业财务场景的 Spring Boot 后端项目，当�
       "path": "/api/vouchers/JV-99999999"
     }
 
-主要业务错误码：`ACCOUNT_ALREADY_EXISTS`、`ACCOUNT_NOT_FOUND`、`ACCOUNT_DISABLED`、`PERIOD_ALREADY_EXISTS`、`PERIOD_NOT_FOUND`、`PERIOD_CLOSED`、`VOUCHER_NOT_BALANCED`、`VOUCHER_NOT_FOUND`、`VOUCHER_ALREADY_REVERSED`、`REVERSAL_NOT_ALLOWED`、`IDEMPOTENCY_CONFLICT`、`VALIDATION_ERROR`。
+主要业务错误码：`ACCOUNT_ALREADY_EXISTS`、`ACCOUNT_NOT_FOUND`、`ACCOUNT_DISABLED`、`ACCOUNT_BALANCE_NOT_ZERO`、`PERIOD_ALREADY_EXISTS`、`PERIOD_NOT_FOUND`、`PERIOD_CLOSED`、`VOUCHER_NOT_BALANCED`、`VOUCHER_NOT_FOUND`、`VOUCHER_ALREADY_REVERSED`、`REVERSAL_NOT_ALLOWED`、`IDEMPOTENCY_CONFLICT`、`VALIDATION_ERROR`。
