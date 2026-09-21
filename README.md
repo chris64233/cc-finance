@@ -124,6 +124,53 @@ cc-finance 是一个面向企业财务场景的 Spring Boot 后端项目，当�
       -H 'Content-Type: application/json' \
       -d '{"bizKey": "REV-001", "voucherDate": "2026-09-20", "summary": "冲销销售回款"}'
 
+### 发生额试算平衡表
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/reports/trial-balance/{periodCode}` | 按会计期间查询发生额试算平衡表，期间不存在返回 404 |
+
+统计规则：
+
+- 按期间编码查询，`OPEN` 和 `CLOSED` 状态的期间都可以查询；报表在查询时实时统计，不保存额外的报表数据。
+- 统计范围为凭证日期落在该期间起止日期内的所有 `POSTED` 凭证（含冲销凭证，冲销凭证与普通凭证一样参与统计）。
+- 每个在期间内有发生额的科目输出一行，按科目编码升序排列，包含科目编码、名称、类别、借方发生额、贷方发生额、余额方向和余额金额；科目即使之后被停用，只要期间内存在历史分录仍会出现在报表中。
+- 余额方向：借方发生额大于贷方发生额时为 `DEBIT`，贷方大于借方时为 `CREDIT`，两者相等时为 `NONE`；余额金额为借贷差额的绝对值。原凭证与冲销凭证在同一期间时，两边发生额都保留，对应科目的余额相互抵消。
+- 报表同时返回借方发生额合计 `debitTotal` 和贷方发生额合计 `creditTotal`，两者必然相等；没有凭证的期间返回空明细，两个合计均为 `0.00`。
+- 所有金额统一保留两位小数。
+
+查询试算平衡表：
+
+    curl http://localhost:8080/api/reports/trial-balance/2026-09
+
+响应示例：
+
+    {
+      "periodCode": "2026-09",
+      "debitTotal": 1000.50,
+      "creditTotal": 1000.50,
+      "lines": [
+        {
+          "accountCode": "1001",
+          "accountName": "银行存款",
+          "category": "ASSET",
+          "debitAmount": 1000.50,
+          "creditAmount": 0.00,
+          "balanceDirection": "DEBIT",
+          "balanceAmount": 1000.50
+        },
+        {
+          "accountCode": "6001",
+          "accountName": "主营业务收入",
+          "category": "REVENUE",
+          "debitAmount": 0.00,
+          "creditAmount": 1000.50,
+          "balanceDirection": "CREDIT",
+          "balanceAmount": 1000.50
+        }
+      ]
+    }
+
 ## 错误响应
 
 所有错误统一返回 JSON，不暴露堆栈，例如：

@@ -40,6 +40,10 @@ public class Account {
         this.enabled = enabled;
     }
 
+    public void disable() {
+        this.enabled = false;
+    }
+
     public Long getId() {
         return id;
     }
