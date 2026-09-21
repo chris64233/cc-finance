@@ -32,4 +32,18 @@ public interface VoucherRepository extends JpaRepository<JournalVoucher, Long> {
             + "where e.accountCode = :accountCode "
             + "and v.status = com.ccfinance.voucher.VoucherStatus.POSTED")
     AccountBalanceTotal sumPostedDebitAndCreditByAccountCode(@Param("accountCode") String accountCode);
+
+    @Query("select new com.ccfinance.voucher.AccountPeriodBalanceTotal(e.accountCode, "
+            + "sum(case when e.direction = com.ccfinance.voucher.Direction.DEBIT then e.amount end), "
+            + "sum(case when e.direction = com.ccfinance.voucher.Direction.CREDIT then e.amount end)) "
+            + "from JournalEntry e join e.voucher v, Account a "
+            + "where a.code = e.accountCode "
+            + "and a.category in (com.ccfinance.account.AccountCategory.REVENUE, "
+            + "com.ccfinance.account.AccountCategory.EXPENSE) "
+            + "and v.status = com.ccfinance.voucher.VoucherStatus.POSTED "
+            + "and v.voucherDate between :startDate and :endDate "
+            + "group by e.accountCode")
+    List<AccountPeriodBalanceTotal> sumPostedProfitLossTotalsByAccountBetween(
+            @Param("startDate") LocalDate startDate,
+            @Param("endDate") LocalDate endDate);
 }

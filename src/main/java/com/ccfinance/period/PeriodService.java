@@ -1,7 +1,10 @@
 package com.ccfinance.period;
 
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
@@ -13,14 +16,20 @@ import org.springframework.transaction.annotation.Transactional;
 import com.ccfinance.common.ApiException;
 import com.ccfinance.period.dto.PeriodRequest;
 import com.ccfinance.period.dto.PeriodResponse;
+import com.ccfinance.voucher.AccountPeriodBalanceTotal;
+import com.ccfinance.voucher.VoucherRepository;
 
 @Service
 public class PeriodService {
 
-    private final PeriodRepository periodRepository;
+    private static final BigDecimal ZERO = BigDecimal.ZERO.setScale(2, RoundingMode.HALF_UP);
 
-    public PeriodService(PeriodRepository periodRepository) {
+    private final PeriodRepository periodRepository;
+    private final VoucherRepository voucherRepository;
+
+    public PeriodService(PeriodRepository periodRepository, VoucherRepository voucherRepository) {
         this.periodRepository = periodRepository;
+        this.voucherRepository = voucherRepository;
     }
 
     @Transactional
@@ -62,8 +71,28 @@ public class PeriodService {
         if (period.getStatus() == PeriodStatus.CLOSED) {
             return PeriodResponse.from(period);
         }
+        requireClearedProfitLoss(period);
         period.close();
         return PeriodResponse.from(periodRepository.saveAndFlush(period));
+    }
+
+    private void requireClearedProfitLoss(AccountingPeriod period) {
+        List<String> unclearedAccounts = new ArrayList<>();
+        for (AccountPeriodBalanceTotal totals : voucherRepository.sumPostedProfitLossTotalsByAccountBetween(
+                period.getStartDate(), period.getEndDate())) {
+            BigDecimal debitTotal = totals.debitTotal() == null ? ZERO : totals.debitTotal();
+            BigDecimal creditTotal = totals.creditTotal() == null ? ZERO : totals.creditTotal();
+            if (debitTotal.compareTo(creditTotal) != 0) {
+                unclearedAccounts.add(totals.accountCode()
+                        + " (借方累计=" + debitTotal + ", 贷方累计=" + creditTotal + ")");
+            }
+        }
+        if (!unclearedAccounts.isEmpty()) {
+            unclearedAccounts.sort(String::compareTo);
+            throw new ApiException(HttpStatus.CONFLICT, "PERIOD_PROFIT_LOSS_NOT_CLEARED",
+                    "期间内损益科目借贷余额未结清，不能关账: " + period.getPeriodCode()
+                            + " " + String.join(", ", unclearedAccounts));
+        }
     }
 
     @Transactional

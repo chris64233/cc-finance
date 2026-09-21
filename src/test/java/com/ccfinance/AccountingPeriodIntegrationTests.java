@@ -257,12 +257,37 @@ class AccountingPeriodIntegrationTests {
                 MvcResult closeResult = closeFuture.get(30, TimeUnit.SECONDS);
                 MvcResult postResult = postFuture.get(30, TimeUnit.SECONDS);
 
-                assertThat(closeResult.getResponse().getStatus()).isEqualTo(200);
                 int postStatus = postResult.getResponse().getStatus();
-                assertThat(postStatus).isIn(201, 409);
+                int closeStatus = closeResult.getResponse().getStatus();
+                if (postStatus == 201) {
+                    // 入账先成功：关账必须看到包含该凭证的最新余额，
+                    // 收入科目 6001 未结清，关账失败且期间保持 OPEN。
+                    assertThat(closeStatus).isEqualTo(409);
+                    String closeCode = JsonPath.read(closeResult.getResponse().getContentAsString(), "$.code");
+                    assertThat(closeCode)
+                            .isEqualTo("PERIOD_PROFIT_LOSS_NOT_CLEARED");
+                    assertThat(voucherRepository.count()).isEqualTo(1);
 
-                long expectedVouchers = postStatus == 201 ? 1 : 0;
-                assertThat(voucherRepository.count()).isEqualTo(expectedVouchers);
+                    mockMvc.perform(get("/api/periods/" + periodCode))
+                            .andExpect(status().isOk())
+                            .andExpect(jsonPath("$.status").value("OPEN"))
+                            .andExpect(jsonPath("$.closedAt").doesNotExist());
+
+                    // 结清损益后可以正常关账。
+                    postClearingVoucher("BIZ-CLEAR-" + i, voucherDate)
+                            .andExpect(status().isCreated());
+                    mockMvc.perform(post("/api/periods/" + periodCode + "/close"))
+                            .andExpect(status().isOk())
+                            .andExpect(jsonPath("$.status").value("CLOSED"));
+                } else {
+                    // 关账先成功：入账必须按现有规则失败。
+                    assertThat(postStatus).isEqualTo(409);
+                    String postCode = JsonPath.read(postResult.getResponse().getContentAsString(), "$.code");
+                    assertThat(postCode)
+                            .isEqualTo("PERIOD_CLOSED");
+                    assertThat(closeStatus).isEqualTo(200);
+                    assertThat(voucherRepository.count()).isZero();
+                }
 
                 mockMvc.perform(get("/api/periods/" + periodCode))
                         .andExpect(status().isOk())
@@ -271,7 +296,6 @@ class AccountingPeriodIntegrationTests {
                 postVoucher("BIZ-AFTER-CLOSE-" + i, voucherDate)
                         .andExpect(status().isConflict())
                         .andExpect(jsonPath("$.code").value("PERIOD_CLOSED"));
-                assertThat(voucherRepository.count()).isEqualTo(expectedVouchers);
 
                 voucherRepository.deleteAll();
             }
@@ -309,6 +333,22 @@ class AccountingPeriodIntegrationTests {
                           "entries": [
                             {"accountCode": "1001", "direction": "DEBIT", "amount": 100.00},
                             {"accountCode": "6001", "direction": "CREDIT", "amount": 100.00}
+                          ]
+                        }
+                        """.formatted(bizKey, voucherDate)));
+    }
+
+    private org.springframework.test.web.servlet.ResultActions postClearingVoucher(String bizKey,
+            String voucherDate) throws Exception {
+        return mockMvc.perform(post("/api/vouchers")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                        {
+                          "bizKey": "%s",
+                          "voucherDate": "%s",
+                          "entries": [
+                            {"accountCode": "6001", "direction": "DEBIT", "amount": 100.00},
+                            {"accountCode": "1001", "direction": "CREDIT", "amount": 100.00}
                           ]
                         }
                         """.formatted(bizKey, voucherDate)));

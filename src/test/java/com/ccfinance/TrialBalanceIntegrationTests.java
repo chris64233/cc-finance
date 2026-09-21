@@ -249,6 +249,18 @@ class TrialBalanceIntegrationTests {
                 }
                 """);
 
+        // 结清损益科目后才能关账。
+        postVoucher("""
+                {
+                  "bizKey": "BIZ-TB-040-CLEAR",
+                  "voucherDate": "2026-09-08",
+                  "entries": [
+                    {"accountCode": "6001", "direction": "DEBIT", "amount": 88.88},
+                    {"accountCode": "1001", "direction": "CREDIT", "amount": 88.88}
+                  ]
+                }
+                """);
+
         mockMvc.perform(post("/api/periods/2026-09/close"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("CLOSED"));
@@ -256,8 +268,8 @@ class TrialBalanceIntegrationTests {
         mockMvc.perform(get("/api/periods/2026-09/trial-balance"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.periodCode").value("2026-09"))
-                .andExpect(jsonPath("$.debitTotal").value(88.88))
-                .andExpect(jsonPath("$.creditTotal").value(88.88))
+                .andExpect(jsonPath("$.debitTotal").value(177.76))
+                .andExpect(jsonPath("$.creditTotal").value(177.76))
                 .andExpect(jsonPath("$.items.length()").value(2));
 
         mockMvc.perform(post("/api/vouchers")
