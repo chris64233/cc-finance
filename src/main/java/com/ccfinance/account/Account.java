@@ -59,4 +59,8 @@ public class Account {
     public boolean isEnabled() {
         return enabled;
     }
+
+    public void disable() {
+        this.enabled = false;
+    }
 }

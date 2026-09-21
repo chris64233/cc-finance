@@ -124,6 +124,45 @@ cc-finance 是一个面向企业财务场景的 Spring Boot 后端项目，当�
       -H 'Content-Type: application/json' \
       -d '{"bizKey": "REV-001", "voucherDate": "2026-09-20", "summary": "冲销销售回款"}'
 
+### 发生额试算平衡表
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/api/periods/{periodCode}/trial-balance` | 按会计期间查看发生额试算平衡表，期间不存在返回 404 |
+
+试算平衡表规则：
+
+- 按期间编码实时统计，不保存额外的报表数据；`OPEN` 和 `CLOSED` 期间都可以查询，查询不影响期间状态。
+- 统计范围为凭证日期落在该期间起止日期（含首尾）内的所有 `POSTED` 凭证；冲销凭证与普通凭证一样参与统计，不做排除。
+- 每个在该期间有发生额的科目返回一行（仅在其他期间有分录的科目不出现），按科目编码升序排列，字段包括：科目编码 `accountCode`、科目名称 `accountName`、科目类别 `category`、借方发生额 `debitAmount`、贷方发生额 `creditAmount`、余额方向 `balanceDirection` 和余额金额 `balanceAmount`。
+- 余额方向：借方发生额大于贷方为 `DEBIT`，贷方大于借方为 `CREDIT`，两者相等为 `NONE`；余额金额为借贷差额的绝对值。
+- 返回的借方发生额合计 `debitTotal` 与贷方发生额合计 `creditTotal` 必须相等；没有凭证的期间返回空明细 `items`，两个合计均为 `0.00`。
+- 所有金额统一保留两位小数；科目即使已被停用，只要期间内存在历史分录仍会出现在报表中（科目名称、类别取当前档案）。
+- 原凭证与冲销凭证落在同一期间时，两边发生额都保留并分别计入合计，对应科目的余额按净额正确抵消。
+
+查询试算平衡表：
+
+    curl http://localhost:8080/api/periods/2026-09/trial-balance
+
+响应示例：
+
+    {
+      "periodCode": "2026-09",
+      "debitTotal": 2001.00,
+      "creditTotal": 2001.00,
+      "items": [
+        {
+          "accountCode": "1001",
+          "accountName": "银行存款",
+          "category": "ASSET",
+          "debitAmount": 1000.50,
+          "creditAmount": 1000.50,
+          "balanceDirection": "NONE",
+          "balanceAmount": 0.00
+        }
+      ]
+    }
+
 ## 错误响应
 
 所有错误统一返回 JSON，不暴露堆栈，例如：

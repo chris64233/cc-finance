@@ -1,8 +1,12 @@
 package com.ccfinance.voucher;
 
+import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 public interface VoucherRepository extends JpaRepository<JournalVoucher, Long> {
 
@@ -13,4 +17,11 @@ public interface VoucherRepository extends JpaRepository<JournalVoucher, Long> {
     Optional<JournalVoucher> findByReversalOfVoucherNo(String reversalOfVoucherNo);
 
     boolean existsByReversalOfVoucherNo(String reversalOfVoucherNo);
+
+    @Query("select distinct v from JournalVoucher v left join fetch v.entries "
+            + "where v.status = com.ccfinance.voucher.VoucherStatus.POSTED "
+            + "and v.voucherDate between :startDate and :endDate")
+    List<JournalVoucher> findPostedByVoucherDateBetween(
+            @Param("startDate") LocalDate startDate,
+            @Param("endDate") LocalDate endDate);
 }
