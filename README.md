@@ -53,8 +53,17 @@ cc-finance 是一个面向企业财务场景的 Spring Boot 后端项目，当�
 | POST | `/api/accounts` | 创建科目（编码唯一，重复返回 409） |
 | GET | `/api/accounts` | 查询全部科目 |
 | GET | `/api/accounts/{code}` | 按编码查询科目，不存在返回 404 |
+| POST | `/api/accounts/{code}/deactivate` | 停用科目（幂等，重复停用返回当前结果） |
 
 科目类别：`ASSET`（资产）、`LIABILITY`（负债）、`EQUITY`（所有者权益）、`REVENUE`（收入）、`EXPENSE`（费用）。
+
+科目停用规则：
+
+- 停用前根据该科目所有已入账（`POSTED`）凭证的分录累计借方总额和贷方总额，冲销凭证与普通凭证一样参与计算；只有两者相等（累计余额为零）时才允许停用。
+- 累计余额不为零时返回 409（`ACCOUNT_BALANCE_NOT_ZERO`），科目保持启用状态；科目不存在时返回 404。
+- 停用成功后返回更新后的科目信息（`enabled=false`）；对已停用科目重复调用直接返回当前结果，不重复写入、不报错。
+- 已停用科目不能再用于新的凭证入账（返回 422 `ACCOUNT_DISABLED`）；已有凭证、凭证查询和试算平衡表不受停用影响，仍按历史数据正常返回。
+- 停用与凭证入账通过对科目记录的数据库行级悲观写锁串行化：停用先提交则引用该科目的入账失败；入账先提交则停用按包含该凭证的最新余额判断，不会出现科目已停用却又写入新凭证的情况。
 
 创建科目：
 
@@ -65,6 +74,10 @@ cc-finance 是一个面向企业财务场景的 Spring Boot 后端项目，当�
 查询科目：
 
     curl http://localhost:8080/api/accounts/1001
+
+停用科目：
+
+    curl -X POST http://localhost:8080/api/accounts/1001/deactivate
 
 ### 记账凭证
 
@@ -175,4 +188,4 @@ cc-finance 是一个面向企业财务场景的 Spring Boot 后端项目，当�
       "path": "/api/vouchers/JV-99999999"
     }
 
-主要业务错误码：`ACCOUNT_ALREADY_EXISTS`、`ACCOUNT_NOT_FOUND`、`ACCOUNT_DISABLED`、`PERIOD_ALREADY_EXISTS`、`PERIOD_NOT_FOUND`、`PERIOD_CLOSED`、`VOUCHER_NOT_BALANCED`、`VOUCHER_NOT_FOUND`、`VOUCHER_ALREADY_REVERSED`、`REVERSAL_NOT_ALLOWED`、`IDEMPOTENCY_CONFLICT`、`VALIDATION_ERROR`。
+主要业务错误码：`ACCOUNT_ALREADY_EXISTS`、`ACCOUNT_NOT_FOUND`、`ACCOUNT_DISABLED`、`ACCOUNT_BALANCE_NOT_ZERO`、`PERIOD_ALREADY_EXISTS`、`PERIOD_NOT_FOUND`、`PERIOD_CLOSED`、`VOUCHER_NOT_BALANCED`、`VOUCHER_NOT_FOUND`、`VOUCHER_ALREADY_REVERSED`、`REVERSAL_NOT_ALLOWED`、`IDEMPOTENCY_CONFLICT`、`VALIDATION_ERROR`。

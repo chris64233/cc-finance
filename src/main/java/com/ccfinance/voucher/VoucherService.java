@@ -5,7 +5,10 @@ import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.HashMap;
 import java.util.HexFormat;
+import java.util.List;
+import java.util.Map;
 
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
@@ -52,13 +55,25 @@ public class VoucherService {
 
         periodService.requireOpenPeriodForUpdate(request.voucherDate());
 
+        // 按科目编码排序后逐行加悲观写锁：与科目停用串行化，且避免多科目凭证之间死锁。
+        List<String> accountCodes = request.entries().stream()
+                .map(entry -> entry.accountCode().trim())
+                .distinct()
+                .sorted()
+                .toList();
+        Map<String, Account> accountsByCode = new HashMap<>();
+        for (String accountCode : accountCodes) {
+            Account account = accountRepository.findByCodeForUpdate(accountCode)
+                    .orElseThrow(() -> new ApiException(HttpStatus.UNPROCESSABLE_ENTITY,
+                            "ACCOUNT_NOT_FOUND", "科目不存在: " + accountCode));
+            accountsByCode.put(accountCode, account);
+        }
+
         BigDecimal debitTotal = BigDecimal.ZERO.setScale(2, RoundingMode.UNNECESSARY);
         BigDecimal creditTotal = BigDecimal.ZERO.setScale(2, RoundingMode.UNNECESSARY);
         for (EntryRequest entry : request.entries()) {
             String accountCode = entry.accountCode().trim();
-            Account account = accountRepository.findByCode(accountCode)
-                    .orElseThrow(() -> new ApiException(HttpStatus.UNPROCESSABLE_ENTITY,
-                            "ACCOUNT_NOT_FOUND", "科目不存在: " + accountCode));
+            Account account = accountsByCode.get(accountCode);
             if (!account.isEnabled()) {
                 throw new ApiException(HttpStatus.UNPROCESSABLE_ENTITY,
                         "ACCOUNT_DISABLED", "科目已停用: " + accountCode);
