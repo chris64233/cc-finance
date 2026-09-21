@@ -237,6 +237,7 @@ class TrialBalanceIntegrationTests {
     void trialBalanceCanBeQueriedForClosedPeriodAndPostingStillRejected() throws Exception {
         createAccount("1001", "银行存款", "ASSET", true);
         createAccount("6001", "主营业务收入", "REVENUE", true);
+        createAccount("2202", "应付账款", "LIABILITY", true);
 
         postVoucher("""
                 {
@@ -244,7 +245,7 @@ class TrialBalanceIntegrationTests {
                   "voucherDate": "2026-09-08",
                   "entries": [
                     {"accountCode": "1001", "direction": "DEBIT", "amount": 88.88},
-                    {"accountCode": "6001", "direction": "CREDIT", "amount": 88.88}
+                    {"accountCode": "2202", "direction": "CREDIT", "amount": 88.88}
                   ]
                 }
                 """);

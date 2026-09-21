@@ -34,7 +34,15 @@ cc-finance 是一个面向企业财务场景的 Spring Boot 后端项目，当�
 
 - 会计期间按月份管理，创建时传入 `year`（1900-2100）和 `month`（1-12），系统生成 `YYYY-MM` 格式的期间编码，并保存开始日期、结束日期、状态、创建时间和关账时间。
 - 状态只支持 `OPEN` 和 `CLOSED`，新建期间默认为 `OPEN`；同一 `year` + `month` 只能有一条记录（数据库唯一约束）。
-- 关账只允许把 `OPEN` 期间改为 `CLOSED` 并记录关账时间；对已关账期间重复调用直接返回当前结果，关账时间保持不变。
+- 关账只允许把 `OPEN` 期间改为 `CLOSED` 并记录关账时间；对已关账期间重复调用直接返回当前结果，不重新校验、不重复写入，关账时间保持不变。
+
+关账规则：
+
+- 关账前校验该期间内所有已入账（`POSTED`）凭证中的收入（`REVENUE`）和费用（`EXPENSE`）科目：每个科目的累计借方发生额与累计贷方发生额必须相等（余额为零）才允许关账。
+- 余额只统计凭证日期落在该期间起止日期（含首尾）内的 `POSTED` 凭证，冲销凭证与普通凭证一样参与计算；已停用科目仍按其当前科目类别参与校验。
+- 任一损益科目余额不为零时返回 409（`PERIOD_PROFIT_LOSS_NOT_CLEARED`），期间保持 `OPEN`，不写入关账时间。
+- 期间内没有凭证，或只有资产、负债、所有者权益类科目发生额时，可以正常关账。
+- 关账与同一期间的凭证入账通过数据库事务和期间行级悲观锁保证并发一致：入账先成功则关账基于包含该凭证的最新余额判断；关账先成功则入账按现有规则返回 409（`PERIOD_CLOSED`），不会出现遗漏未结清损益的关账结果。
 
 创建期间：
 
@@ -190,4 +198,4 @@ cc-finance 是一个面向企业财务场景的 Spring Boot 后端项目，当�
       "path": "/api/vouchers/JV-99999999"
     }
 
-主要业务错误码：`ACCOUNT_ALREADY_EXISTS`、`ACCOUNT_NOT_FOUND`、`ACCOUNT_DISABLED`、`ACCOUNT_BALANCE_NOT_ZERO`、`PERIOD_ALREADY_EXISTS`、`PERIOD_NOT_FOUND`、`PERIOD_CLOSED`、`VOUCHER_NOT_BALANCED`、`VOUCHER_NOT_FOUND`、`VOUCHER_ALREADY_REVERSED`、`REVERSAL_NOT_ALLOWED`、`IDEMPOTENCY_CONFLICT`、`VALIDATION_ERROR`。
+主要业务错误码：`ACCOUNT_ALREADY_EXISTS`、`ACCOUNT_NOT_FOUND`、`ACCOUNT_DISABLED`、`ACCOUNT_BALANCE_NOT_ZERO`、`PERIOD_ALREADY_EXISTS`、`PERIOD_NOT_FOUND`、`PERIOD_CLOSED`、`PERIOD_PROFIT_LOSS_NOT_CLEARED`、`VOUCHER_NOT_BALANCED`、`VOUCHER_NOT_FOUND`、`VOUCHER_ALREADY_REVERSED`、`REVERSAL_NOT_ALLOWED`、`IDEMPOTENCY_CONFLICT`、`VALIDATION_ERROR`。

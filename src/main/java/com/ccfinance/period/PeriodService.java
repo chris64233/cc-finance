@@ -1,5 +1,6 @@
 package com.ccfinance.period;
 
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.Comparator;
@@ -13,14 +14,18 @@ import org.springframework.transaction.annotation.Transactional;
 import com.ccfinance.common.ApiException;
 import com.ccfinance.period.dto.PeriodRequest;
 import com.ccfinance.period.dto.PeriodResponse;
+import com.ccfinance.voucher.AccountPeriodBalance;
+import com.ccfinance.voucher.VoucherRepository;
 
 @Service
 public class PeriodService {
 
     private final PeriodRepository periodRepository;
+    private final VoucherRepository voucherRepository;
 
-    public PeriodService(PeriodRepository periodRepository) {
+    public PeriodService(PeriodRepository periodRepository, VoucherRepository voucherRepository) {
         this.periodRepository = periodRepository;
+        this.voucherRepository = voucherRepository;
     }
 
     @Transactional
@@ -62,8 +67,30 @@ public class PeriodService {
         if (period.getStatus() == PeriodStatus.CLOSED) {
             return PeriodResponse.from(period);
         }
+        List<String> unclearedAccounts = findUnclearedProfitLossAccounts(period);
+        if (!unclearedAccounts.isEmpty()) {
+            throw new ApiException(HttpStatus.CONFLICT, "PERIOD_PROFIT_LOSS_NOT_CLEARED",
+                    "期间内损益科目余额未结清，无法关账: " + String.join(", ", unclearedAccounts));
+        }
         period.close();
         return PeriodResponse.from(periodRepository.saveAndFlush(period));
+    }
+
+    private List<String> findUnclearedProfitLossAccounts(AccountingPeriod period) {
+        return voucherRepository.sumPostedProfitLossBalancesByVoucherDateBetween(
+                period.getStartDate(), period.getEndDate())
+                .stream()
+                .filter(balance -> debitTotal(balance).compareTo(creditTotal(balance)) != 0)
+                .map(AccountPeriodBalance::accountCode)
+                .toList();
+    }
+
+    private BigDecimal debitTotal(AccountPeriodBalance balance) {
+        return balance.debitTotal() == null ? BigDecimal.ZERO : balance.debitTotal();
+    }
+
+    private BigDecimal creditTotal(AccountPeriodBalance balance) {
+        return balance.creditTotal() == null ? BigDecimal.ZERO : balance.creditTotal();
     }
 
     @Transactional

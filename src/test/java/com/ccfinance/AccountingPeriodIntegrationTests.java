@@ -227,7 +227,7 @@ class AccountingPeriodIntegrationTests {
     @Test
     void closeAndPostConcurrentlyProduceConsistentResult() throws Exception {
         createAccount("1001", "银行存款", "ASSET");
-        createAccount("6001", "主营业务收入", "REVENUE");
+        createAccount("2001", "应付账款", "LIABILITY");
 
         ExecutorService executor = Executors.newFixedThreadPool(2);
         try {
@@ -249,7 +249,7 @@ class AccountingPeriodIntegrationTests {
                 Future<MvcResult> postFuture = executor.submit(() -> {
                     ready.countDown();
                     start.await();
-                    return postVoucher(bizKey, voucherDate).andReturn();
+                    return postVoucher(bizKey, voucherDate, "1001", "2001").andReturn();
                 });
                 assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
                 start.countDown();
@@ -268,7 +268,7 @@ class AccountingPeriodIntegrationTests {
                         .andExpect(status().isOk())
                         .andExpect(jsonPath("$.status").value("CLOSED"));
 
-                postVoucher("BIZ-AFTER-CLOSE-" + i, voucherDate)
+                postVoucher("BIZ-AFTER-CLOSE-" + i, voucherDate, "1001", "2001")
                         .andExpect(status().isConflict())
                         .andExpect(jsonPath("$.code").value("PERIOD_CLOSED"));
                 assertThat(voucherRepository.count()).isEqualTo(expectedVouchers);
@@ -300,6 +300,11 @@ class AccountingPeriodIntegrationTests {
 
     private org.springframework.test.web.servlet.ResultActions postVoucher(String bizKey, String voucherDate)
             throws Exception {
+        return postVoucher(bizKey, voucherDate, "1001", "6001");
+    }
+
+    private org.springframework.test.web.servlet.ResultActions postVoucher(String bizKey, String voucherDate,
+            String debitAccount, String creditAccount) throws Exception {
         return mockMvc.perform(post("/api/vouchers")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("""
@@ -307,10 +312,10 @@ class AccountingPeriodIntegrationTests {
                           "bizKey": "%s",
                           "voucherDate": "%s",
                           "entries": [
-                            {"accountCode": "1001", "direction": "DEBIT", "amount": 100.00},
-                            {"accountCode": "6001", "direction": "CREDIT", "amount": 100.00}
+                            {"accountCode": "%s", "direction": "DEBIT", "amount": 100.00},
+                            {"accountCode": "%s", "direction": "CREDIT", "amount": 100.00}
                           ]
                         }
-                        """.formatted(bizKey, voucherDate)));
+                        """.formatted(bizKey, voucherDate, debitAccount, creditAccount)));
     }
 }
