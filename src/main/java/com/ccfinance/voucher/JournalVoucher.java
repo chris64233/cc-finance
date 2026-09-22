@@ -24,7 +24,9 @@ import jakarta.persistence.UniqueConstraint;
 @Table(name = "journal_vouchers", uniqueConstraints = {
         @UniqueConstraint(name = "uk_journal_vouchers_voucher_no", columnNames = "voucher_no"),
         @UniqueConstraint(name = "uk_journal_vouchers_biz_key", columnNames = "biz_key"),
-        @UniqueConstraint(name = "uk_journal_vouchers_reversal_of", columnNames = "reversal_of_voucher_no")
+        @UniqueConstraint(name = "uk_journal_vouchers_reversal_of", columnNames = "reversal_of_voucher_no"),
+        @UniqueConstraint(name = "uk_journal_vouchers_carry_forward_period",
+                columnNames = "carry_forward_period_code")
 })
 public class JournalVoucher {
 
@@ -64,6 +66,12 @@ public class JournalVoucher {
     @Column(name = "reversal_of_voucher_no", length = 32)
     private String reversalOfVoucherNo;
 
+    @Column(name = "carry_forward_period_code", length = 7, updatable = false)
+    private String carryForwardPeriodCode;
+
+    @Column(name = "carry_forward_equity_account_code", length = 64, updatable = false)
+    private String carryForwardEquityAccountCode;
+
     @OneToMany(mappedBy = "voucher", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("lineNo ASC")
     private List<JournalEntry> entries = new ArrayList<>();
@@ -95,6 +103,11 @@ public class JournalVoucher {
 
     public void markAsReversalOf(String originalVoucherNo) {
         this.reversalOfVoucherNo = originalVoucherNo;
+    }
+
+    public void markAsProfitLossCarryForward(String periodCode, String equityAccountCode) {
+        this.carryForwardPeriodCode = periodCode;
+        this.carryForwardEquityAccountCode = equityAccountCode;
     }
 
     public Long getId() {
@@ -139,6 +152,14 @@ public class JournalVoucher {
 
     public String getReversalOfVoucherNo() {
         return reversalOfVoucherNo;
+    }
+
+    public String getCarryForwardPeriodCode() {
+        return carryForwardPeriodCode;
+    }
+
+    public String getCarryForwardEquityAccountCode() {
+        return carryForwardEquityAccountCode;
     }
 
     public List<JournalEntry> getEntries() {

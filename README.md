@@ -204,6 +204,30 @@ cc-finance 是一个面向企业财务场景的 Spring Boot 后端项目，当�
       ]
     }
 
+### 期间损益结转
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| POST | `/api/periods/{periodCode}/profit-loss-carry-forward` | 对 OPEN 期间发起损益结转，生成一张已入账结转凭证 |
+
+损益结转规则：
+
+- 只允许对处于 `OPEN` 状态的期间发起损益结转：期间不存在返回 404（`PERIOD_NOT_FOUND`），期间已关账返回 409（`PERIOD_CLOSED`）。
+- 请求必须指定承接损益的所有者权益科目 `equityAccountCode`（非空，缺失返回 400 `VALIDATION_ERROR`）；该科目必须存在、处于启用状态且类别为 `EQUITY`，否则分别返回 422 `ACCOUNT_NOT_FOUND`、`ACCOUNT_DISABLED`、`ACCOUNT_NOT_EQUITY`。
+- 系统在持有期间行级悲观锁的事务内，汇总该期间起止日期（含首尾）内全部已入账（`POSTED`）凭证中收入（`REVENUE`）和费用（`EXPENSE`）科目的借贷发生额：每个余额不为零的损益科目生成一条方向相反、金额等于其余额的分录，使这些科目的期末余额归零；分录按科目编码升序排列。
+- 全部损益分录的借贷差额（净损益）计入指定的所有者权益科目：净收益贷记权益科目，净亏损借记权益科目，整张凭证借贷必然平衡；差额为零时不生成金额为零的权益分录。
+- 结转凭证日期固定为期间最后一天，状态为 `POSTED`，摘要为“损益结转 {期间编码}”；响应通过 `carryForwardPeriodCode` 和 `carryForwardEquityAccountCode` 标识结转凭证及其承接科目。
+- 如果该期间收入和费用科目已经全部结清（含期间没有凭证、只有资产/负债/权益发生额的情况），不生成空凭证，返回 409 和稳定业务错误码 `PROFIT_LOSS_ALREADY_CLEARED`。
+- 同一期间最多只能有一张损益结转凭证（`carry_forward_period_code` 数据库唯一约束）：使用相同承接科目重复请求时直接返回首次生成的凭证（幂等）；改用其他承接科目重复请求时返回 409 和稳定业务错误码 `PROFIT_LOSS_CARRY_FORWARD_CONFLICT`。
+- 任何校验失败都在同一事务内回滚，不会留下凭证或分录数据。
+- 损益结转与普通凭证入账、期间关账复用同一套数据库事务和期间行级悲观锁：结转金额基于锁定后的完整期间数据计算，不会遗漏同时提交的凭证；已关账期间不会生成结转凭证，结转成功后按现有规则关账可以成功。
+
+发起损益结转：
+
+    curl -X POST http://localhost:8080/api/periods/2026-09/profit-loss-carry-forward \
+      -H 'Content-Type: application/json' \
+      -d '{"equityAccountCode": "3001"}'
+
 ## 错误响应
 
 所有错误统一返回 JSON，不暴露堆栈，例如：
@@ -216,4 +240,4 @@ cc-finance 是一个面向企业财务场景的 Spring Boot 后端项目，当�
       "path": "/api/vouchers/JV-99999999"
     }
 
-主要业务错误码：`ACCOUNT_ALREADY_EXISTS`、`ACCOUNT_NOT_FOUND`、`ACCOUNT_DISABLED`、`ACCOUNT_BALANCE_NOT_ZERO`、`PERIOD_ALREADY_EXISTS`、`PERIOD_NOT_FOUND`、`PERIOD_CLOSED`、`PERIOD_PROFIT_LOSS_NOT_CLEARED`、`PERIOD_REOPEN_NOT_ALLOWED`、`VOUCHER_NOT_BALANCED`、`VOUCHER_NOT_FOUND`、`VOUCHER_ALREADY_REVERSED`、`REVERSAL_NOT_ALLOWED`、`IDEMPOTENCY_CONFLICT`、`VALIDATION_ERROR`。
+主要业务错误码：`ACCOUNT_ALREADY_EXISTS`、`ACCOUNT_NOT_FOUND`、`ACCOUNT_DISABLED`、`ACCOUNT_NOT_EQUITY`、`ACCOUNT_BALANCE_NOT_ZERO`、`PERIOD_ALREADY_EXISTS`、`PERIOD_NOT_FOUND`、`PERIOD_CLOSED`、`PERIOD_PROFIT_LOSS_NOT_CLEARED`、`PERIOD_REOPEN_NOT_ALLOWED`、`PROFIT_LOSS_ALREADY_CLEARED`、`PROFIT_LOSS_CARRY_FORWARD_CONFLICT`、`VOUCHER_NOT_BALANCED`、`VOUCHER_NOT_FOUND`、`VOUCHER_ALREADY_REVERSED`、`REVERSAL_NOT_ALLOWED`、`IDEMPOTENCY_CONFLICT`、`VALIDATION_ERROR`。

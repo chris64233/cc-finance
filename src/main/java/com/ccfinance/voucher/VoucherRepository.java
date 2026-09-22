@@ -18,6 +18,8 @@ public interface VoucherRepository extends JpaRepository<JournalVoucher, Long> {
 
     boolean existsByReversalOfVoucherNo(String reversalOfVoucherNo);
 
+    Optional<JournalVoucher> findByCarryForwardPeriodCode(String carryForwardPeriodCode);
+
     @Query("select distinct v from JournalVoucher v left join fetch v.entries "
             + "where v.status = com.ccfinance.voucher.VoucherStatus.POSTED "
             + "and v.voucherDate between :startDate and :endDate")
