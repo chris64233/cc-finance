@@ -49,6 +49,11 @@ public class AccountingPeriod {
 
     private Instant closedAt;
 
+    private Instant reopenedAt;
+
+    @Column(length = 200)
+    private String reopenReason;
+
     protected AccountingPeriod() {
     }
 
@@ -66,6 +71,13 @@ public class AccountingPeriod {
     public void close() {
         this.status = PeriodStatus.CLOSED;
         this.closedAt = Instant.now();
+    }
+
+    public void reopen(String reason) {
+        this.status = PeriodStatus.OPEN;
+        this.closedAt = null;
+        this.reopenedAt = Instant.now();
+        this.reopenReason = reason;
     }
 
     public Long getId() {
@@ -102,5 +114,13 @@ public class AccountingPeriod {
 
     public Instant getClosedAt() {
         return closedAt;
+    }
+
+    public Instant getReopenedAt() {
+        return reopenedAt;
+    }
+
+    public String getReopenReason() {
+        return reopenReason;
     }
 }

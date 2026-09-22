@@ -29,12 +29,14 @@ cc-finance 是一个面向企业财务场景的 Spring Boot 后端项目，当�
 | GET | `/api/periods` | 查询全部会计期间（按期间编码升序） |
 | GET | `/api/periods/{periodCode}` | 按期间编码查询，不存在返回 404 |
 | POST | `/api/periods/{periodCode}/close` | 关账（校验损益结清，幂等，重复关账返回当前结果） |
+| POST | `/api/periods/{periodCode}/reopen` | 反关账（需提供非空原因，幂等，重复反关账返回当前结果） |
 
 期间规则：
 
 - 会计期间按月份管理，创建时传入 `year`（1900-2100）和 `month`（1-12），系统生成 `YYYY-MM` 格式的期间编码，并保存开始日期、结束日期、状态、创建时间和关账时间。
 - 状态只支持 `OPEN` 和 `CLOSED`，新建期间默认为 `OPEN`；同一 `year` + `month` 只能有一条记录（数据库唯一约束）。
 - 关账只允许把 `OPEN` 期间改为 `CLOSED` 并记录关账时间；对已关账期间重复调用直接返回当前结果，不重新校验、不重复写入，关账时间保持不变。
+- 期间查询会返回关账时间 `closedAt`、反关账时间 `reopenedAt` 和反关账原因 `reopenReason`；未发生对应操作时对应字段不返回。
 
 关账规则：
 
@@ -45,6 +47,14 @@ cc-finance 是一个面向企业财务场景的 Spring Boot 后端项目，当�
 - 期间没有凭证，或只有资产、负债、所有者权益类科目发生额时，可以正常关账。
 - 关账与同一期间的凭证入账通过数据库事务和期间行级悲观锁保证并发一致：入账先成功则关账基于包含该凭证的最新余额判断；关账先成功则入账返回 409（`PERIOD_CLOSED`），不会出现遗漏未结清损益的关账结果。
 
+反关账规则：
+
+- 反关账只允许把 `CLOSED` 期间重新改为 `OPEN`：请求必须提供非空的反关账原因 `reason`（否则返回 400），成功后清空原关账时间 `closedAt`，并记录本次反关账时间 `reopenedAt` 和原因 `reopenReason`；期间不存在返回 404（`PERIOD_NOT_FOUND`）。
+- 只能重新打开当前最新的已关账期间：如果存在期间编码更晚且状态为 `CLOSED` 的期间，返回 409（`PERIOD_REOPEN_NOT_ALLOWED`），当前期间不发生任何变化；更晚期间仍为 `OPEN` 时不受此限制。
+- 对已经 `OPEN` 的期间重复反关账直接返回当前结果，不覆盖已有的反关账时间和原因，也不重复写入。
+- 反关账成功后该期间重新允许凭证入账，也可以再次按现有规则关账；再次关账会记录新的关账时间，历史反关账信息保留。
+- 反关账与同一期间的凭证入账通过数据库事务和期间行级悲观锁串行化：凭证不能写入仍处于 `CLOSED` 状态的期间，反关账提交后新的入账才能成功。
+
 创建期间：
 
     curl -X POST http://localhost:8080/api/periods \
@@ -54,6 +64,12 @@ cc-finance 是一个面向企业财务场景的 Spring Boot 后端项目，当�
 关账：
 
     curl -X POST http://localhost:8080/api/periods/2026-09/close
+
+反关账：
+
+    curl -X POST http://localhost:8080/api/periods/2026-09/reopen \
+      -H 'Content-Type: application/json' \
+      -d '{"reason": "发现漏记凭证，需要补录"}'
 
 ### 会计科目
 
@@ -199,4 +215,4 @@ cc-finance 是一个面向企业财务场景的 Spring Boot 后端项目，当�
       "path": "/api/vouchers/JV-99999999"
     }
 
-主要业务错误码：`ACCOUNT_ALREADY_EXISTS`、`ACCOUNT_NOT_FOUND`、`ACCOUNT_DISABLED`、`ACCOUNT_BALANCE_NOT_ZERO`、`PERIOD_ALREADY_EXISTS`、`PERIOD_NOT_FOUND`、`PERIOD_CLOSED`、`PERIOD_PROFIT_LOSS_NOT_CLEARED`、`VOUCHER_NOT_BALANCED`、`VOUCHER_NOT_FOUND`、`VOUCHER_ALREADY_REVERSED`、`REVERSAL_NOT_ALLOWED`、`IDEMPOTENCY_CONFLICT`、`VALIDATION_ERROR`。
+主要业务错误码：`ACCOUNT_ALREADY_EXISTS`、`ACCOUNT_NOT_FOUND`、`ACCOUNT_DISABLED`、`ACCOUNT_BALANCE_NOT_ZERO`、`PERIOD_ALREADY_EXISTS`、`PERIOD_NOT_FOUND`、`PERIOD_CLOSED`、`PERIOD_PROFIT_LOSS_NOT_CLEARED`、`PERIOD_REOPEN_NOT_ALLOWED`、`VOUCHER_NOT_BALANCED`、`VOUCHER_NOT_FOUND`、`VOUCHER_ALREADY_REVERSED`、`REVERSAL_NOT_ALLOWED`、`IDEMPOTENCY_CONFLICT`、`VALIDATION_ERROR`。

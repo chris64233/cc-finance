@@ -14,7 +14,9 @@ public record PeriodResponse(
         LocalDate endDate,
         PeriodStatus status,
         Instant createdAt,
-        Instant closedAt) {
+        Instant closedAt,
+        Instant reopenedAt,
+        String reopenReason) {
 
     public static PeriodResponse from(AccountingPeriod period) {
         return new PeriodResponse(
@@ -25,6 +27,8 @@ public record PeriodResponse(
                 period.getEndDate(),
                 period.getStatus(),
                 period.getCreatedAt(),
-                period.getClosedAt());
+                period.getClosedAt(),
+                period.getReopenedAt(),
+                period.getReopenReason());
     }
 }

@@ -15,6 +15,8 @@ public interface PeriodRepository extends JpaRepository<AccountingPeriod, Long> 
 
     boolean existsByPeriodCode(String periodCode);
 
+    boolean existsByPeriodCodeGreaterThanAndStatus(String periodCode, PeriodStatus status);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select p from AccountingPeriod p where p.periodCode = :periodCode")
     Optional<AccountingPeriod> findByPeriodCodeForUpdate(@Param("periodCode") String periodCode);
