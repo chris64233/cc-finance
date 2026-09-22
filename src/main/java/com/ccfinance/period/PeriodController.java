@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.ccfinance.period.dto.PeriodRequest;
 import com.ccfinance.period.dto.PeriodResponse;
+import com.ccfinance.period.dto.ReopenRequest;
 
 import jakarta.validation.Valid;
 
@@ -45,5 +46,11 @@ public class PeriodController {
     @PostMapping("/{periodCode}/close")
     public PeriodResponse close(@PathVariable String periodCode) {
         return periodService.close(periodCode);
+    }
+
+    @PostMapping("/{periodCode}/reopen")
+    public PeriodResponse reopen(@PathVariable String periodCode,
+            @Valid @RequestBody ReopenRequest request) {
+        return periodService.reopen(periodCode, request);
     }
 }

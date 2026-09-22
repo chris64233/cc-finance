@@ -16,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.ccfinance.common.ApiException;
 import com.ccfinance.period.dto.PeriodRequest;
 import com.ccfinance.period.dto.PeriodResponse;
+import com.ccfinance.period.dto.ReopenRequest;
 import com.ccfinance.voucher.AccountPeriodBalanceTotal;
 import com.ccfinance.voucher.VoucherRepository;
 
@@ -73,6 +74,28 @@ public class PeriodService {
         }
         requireClearedProfitLoss(period);
         period.close();
+        return PeriodResponse.from(periodRepository.saveAndFlush(period));
+    }
+
+    @Transactional
+    public PeriodResponse reopen(String periodCode, ReopenRequest request) {
+        AccountingPeriod period = periodRepository.findByPeriodCodeForUpdate(periodCode)
+                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "PERIOD_NOT_FOUND",
+                        "会计期间不存在: " + periodCode));
+        if (period.getStatus() == PeriodStatus.OPEN) {
+            return PeriodResponse.from(period);
+        }
+        List<AccountingPeriod> laterClosedPeriods =
+                periodRepository.findLaterClosedPeriodsForUpdate(periodCode);
+        if (!laterClosedPeriods.isEmpty()) {
+            String latest = laterClosedPeriods.stream()
+                    .map(AccountingPeriod::getPeriodCode)
+                    .max(String::compareTo)
+                    .orElseThrow();
+            throw new ApiException(HttpStatus.CONFLICT, "PERIOD_REOPEN_NOT_ALLOWED",
+                    "只能重新打开最新的已关账期间，存在更晚的已关账期间: " + latest);
+        }
+        period.reopen(request.reason().trim());
         return PeriodResponse.from(periodRepository.saveAndFlush(period));
     }
 

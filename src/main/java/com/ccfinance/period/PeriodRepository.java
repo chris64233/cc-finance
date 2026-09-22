@@ -1,5 +1,6 @@
 package com.ccfinance.period;
 
+import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -18,4 +19,9 @@ public interface PeriodRepository extends JpaRepository<AccountingPeriod, Long> 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select p from AccountingPeriod p where p.periodCode = :periodCode")
     Optional<AccountingPeriod> findByPeriodCodeForUpdate(@Param("periodCode") String periodCode);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select p from AccountingPeriod p where p.periodCode > :periodCode"
+            + " and p.status = com.ccfinance.period.PeriodStatus.CLOSED")
+    List<AccountingPeriod> findLaterClosedPeriodsForUpdate(@Param("periodCode") String periodCode);
 }
