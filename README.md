@@ -30,6 +30,7 @@ cc-finance 是一个面向企业财务场景的 Spring Boot 后端项目，当�
 | GET | `/api/periods/{periodCode}` | 按期间编码查询，不存在返回 404 |
 | POST | `/api/periods/{periodCode}/close` | 关账（校验损益结清，幂等，重复关账返回当前结果） |
 | POST | `/api/periods/{periodCode}/reopen` | 反关账（需非空原因，幂等，重复反关账返回当前结果） |
+| POST | `/api/periods/{periodCode}/profit-loss-carry-forward` | 对 `OPEN` 期间发起损益结转，生成一张已入账结转凭证 |
 
 期间规则：
 
@@ -56,6 +57,17 @@ cc-finance 是一个面向企业财务场景的 Spring Boot 后端项目，当�
 - 反关账成功后，该期间重新允许凭证入账，也可以再次按现有规则关账。
 - 反关账与同一期间的凭证入账通过数据库事务和期间行级悲观锁保证并发一致：凭证不会写入仍处于 `CLOSED` 状态的期间，反关账提交后新的入账才能成功。
 
+损益结转规则：
+
+- 仅允许对 `OPEN` 状态的期间发起结转：期间不存在返回 404（`PERIOD_NOT_FOUND`），期间已关账返回 409（`PERIOD_CLOSED`），均不会留下凭证或分录。
+- 请求必须指定用于承接损益的所有者权益科目 `carryAccountCode`：科目不存在返回 422（`ACCOUNT_NOT_FOUND`），科目已停用返回 422（`ACCOUNT_DISABLED`），科目类别不是 `EQUITY` 返回 422（`PROFIT_LOSS_CARRY_ACCOUNT_INVALID`）；请求体缺失或编码为空白返回 400（`VALIDATION_ERROR`）。
+- 结转在同一事务内先对会计期间加行级悲观锁，再汇总该期间起止日期（含首尾）内所有已入账（`POSTED`）凭证中收入（`REVENUE`）和费用（`EXPENSE`）科目的借贷余额；结转金额基于锁定后的完整期间数据计算，不会遗漏并发提交的凭证，也不会在已关账期间生成凭证。
+- 系统自动生成一张日期为期间最后一天的 `POSTED` 凭证：每个余额不为零的损益科目按科目编码升序生成一条方向相反、金额等于期末余额绝对值的分录，使这些科目的期末余额归零；收入贷方余额合计与费用借方余额合计的差额计入承接权益科目（净利润贷记权益，净亏损借记权益），整张凭证借贷必然平衡。
+- 损益科目恰好全部结清（差额为零且无需生成损益分录）时不生成金额为零的权益分录；若该期间所有损益科目余额本来就全部为零，则不生成空凭证，返回 409（`PROFIT_LOSS_ALREADY_CLEARED`）。
+- 同一期间最多只能存在一张损益结转凭证（`pl_carry_period_code` 数据库唯一约束）。使用相同承接科目重复请求时直接返回首次生成的凭证（HTTP 201，凭证号不变）；改用其他承接科目重复请求时返回 409（`PROFIT_LOSS_CARRY_FORWARD_CONFLICT`），不修改、不新增凭证。
+- 任何校验失败都会整体回滚，不留下凭证或分录；结转凭证与普通凭证一样参与试算平衡表和关账校验，结转成功后损益科目余额全部归零，按现有规则关账应当成功。
+- 结转、普通凭证入账和期间关账通过同一套数据库事务与期间行级悲观锁串行化：入账先提交则结转会把该凭证计入汇总，结转先完成则随后的关账基于包含结转凭证的余额判断；结转与关账并发时，关账先成功则结转返回 409（`PERIOD_CLOSED`）。
+
 创建期间：
 
     curl -X POST http://localhost:8080/api/periods \
@@ -71,6 +83,12 @@ cc-finance 是一个面向企业财务场景的 Spring Boot 后端项目，当�
     curl -X POST http://localhost:8080/api/periods/2026-09/reopen \
       -H 'Content-Type: application/json' \
       -d '{"reason": "补录9月凭证"}'
+
+损益结转（承接科目为 3001 实收资本）：
+
+    curl -X POST http://localhost:8080/api/periods/2026-09/profit-loss-carry-forward \
+      -H 'Content-Type: application/json' \
+      -d '{"carryAccountCode": "3001"}'
 
 ### 会计科目
 
@@ -216,4 +234,4 @@ cc-finance 是一个面向企业财务场景的 Spring Boot 后端项目，当�
       "path": "/api/vouchers/JV-99999999"
     }
 
-主要业务错误码：`ACCOUNT_ALREADY_EXISTS`、`ACCOUNT_NOT_FOUND`、`ACCOUNT_DISABLED`、`ACCOUNT_BALANCE_NOT_ZERO`、`PERIOD_ALREADY_EXISTS`、`PERIOD_NOT_FOUND`、`PERIOD_CLOSED`、`PERIOD_PROFIT_LOSS_NOT_CLEARED`、`PERIOD_REOPEN_NOT_ALLOWED`、`VOUCHER_NOT_BALANCED`、`VOUCHER_NOT_FOUND`、`VOUCHER_ALREADY_REVERSED`、`REVERSAL_NOT_ALLOWED`、`IDEMPOTENCY_CONFLICT`、`VALIDATION_ERROR`。
+主要业务错误码：`ACCOUNT_ALREADY_EXISTS`、`ACCOUNT_NOT_FOUND`、`ACCOUNT_DISABLED`、`ACCOUNT_BALANCE_NOT_ZERO`、`PERIOD_ALREADY_EXISTS`、`PERIOD_NOT_FOUND`、`PERIOD_CLOSED`、`PERIOD_PROFIT_LOSS_NOT_CLEARED`、`PERIOD_REOPEN_NOT_ALLOWED`、`PROFIT_LOSS_ALREADY_CLEARED`、`PROFIT_LOSS_CARRY_ACCOUNT_INVALID`、`PROFIT_LOSS_CARRY_FORWARD_CONFLICT`、`VOUCHER_NOT_BALANCED`、`VOUCHER_NOT_FOUND`、`VOUCHER_ALREADY_REVERSED`、`REVERSAL_NOT_ALLOWED`、`IDEMPOTENCY_CONFLICT`、`VALIDATION_ERROR`。

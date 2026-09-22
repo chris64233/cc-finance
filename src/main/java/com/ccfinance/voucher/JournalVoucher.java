@@ -24,7 +24,9 @@ import jakarta.persistence.UniqueConstraint;
 @Table(name = "journal_vouchers", uniqueConstraints = {
         @UniqueConstraint(name = "uk_journal_vouchers_voucher_no", columnNames = "voucher_no"),
         @UniqueConstraint(name = "uk_journal_vouchers_biz_key", columnNames = "biz_key"),
-        @UniqueConstraint(name = "uk_journal_vouchers_reversal_of", columnNames = "reversal_of_voucher_no")
+        @UniqueConstraint(name = "uk_journal_vouchers_reversal_of", columnNames = "reversal_of_voucher_no"),
+        @UniqueConstraint(name = "uk_journal_vouchers_pl_carry_period",
+                columnNames = "pl_carry_period_code")
 })
 public class JournalVoucher {
 
@@ -64,6 +66,12 @@ public class JournalVoucher {
     @Column(name = "reversal_of_voucher_no", length = 32)
     private String reversalOfVoucherNo;
 
+    @Column(name = "pl_carry_period_code", length = 7)
+    private String profitLossCarryPeriodCode;
+
+    @Column(name = "pl_carry_account_code", length = 64)
+    private String profitLossCarryAccountCode;
+
     @OneToMany(mappedBy = "voucher", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("lineNo ASC")
     private List<JournalEntry> entries = new ArrayList<>();
@@ -95,6 +103,11 @@ public class JournalVoucher {
 
     public void markAsReversalOf(String originalVoucherNo) {
         this.reversalOfVoucherNo = originalVoucherNo;
+    }
+
+    public void markAsProfitLossCarryForward(String periodCode, String carryAccountCode) {
+        this.profitLossCarryPeriodCode = periodCode;
+        this.profitLossCarryAccountCode = carryAccountCode;
     }
 
     public Long getId() {
@@ -139,6 +152,14 @@ public class JournalVoucher {
 
     public String getReversalOfVoucherNo() {
         return reversalOfVoucherNo;
+    }
+
+    public String getProfitLossCarryPeriodCode() {
+        return profitLossCarryPeriodCode;
+    }
+
+    public String getProfitLossCarryAccountCode() {
+        return profitLossCarryAccountCode;
     }
 
     public List<JournalEntry> getEntries() {
