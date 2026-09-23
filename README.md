@@ -52,6 +52,7 @@ cc-finance 是一个面向企业财务场景的 Spring Boot 后端项目，当�
 - 反关账只允许把 `CLOSED` 期间重新改为 `OPEN`；请求必须提供非空的反关账原因 `reason`（最长 500 字符），为空或缺失返回 400（`VALIDATION_ERROR`）。
 - 反关账成功后清空原关账时间 `closedAt`，并记录本次反关账时间 `reopenedAt` 和原因 `reopenReason`，查询期间时一并返回。
 - 只能重新打开当前最新的已关账期间：如果存在期间编码更晚且状态为 `CLOSED` 的期间，返回 409（`PERIOD_REOPEN_NOT_ALLOWED`），当前期间保持 `CLOSED` 不变；需先反关账更晚的期间。
+- 已经生成下期期初余额结转凭证的源期间不能反关账，返回 409（`PERIOD_REOPEN_NOT_ALLOWED`），避免下期期初数据与源期间失去一致性。
 - 对已经 `OPEN` 的期间重复反关账，直接返回当前结果，不覆盖已有反关账信息、不重复写入。
 - 反关账成功后，该期间重新允许凭证入账，也可以再次按现有规则关账。
 - 反关账与同一期间的凭证入账通过数据库事务和期间行级悲观锁保证并发一致：凭证不会写入仍处于 `CLOSED` 状态的期间，反关账提交后新的入账才能成功。
@@ -228,6 +229,29 @@ cc-finance 是一个面向企业财务场景的 Spring Boot 后端项目，当�
       -H 'Content-Type: application/json' \
       -d '{"equityAccountCode": "3001"}'
 
+### 期间余额结转
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| POST | `/api/periods/{periodCode}/balance-carry-forward` | 对已关账期间发起余额结转，在下一自然月第一天生成一张已入账期初凭证 |
+
+余额结转规则：
+
+- 只允许对处于 `CLOSED` 状态的源期间发起余额结转：源期间不存在返回 404（`PERIOD_NOT_FOUND`），源期间尚未关账返回 409（`PERIOD_NOT_CLOSED`）。
+- 下一个自然月的会计期间必须已经存在且处于 `OPEN` 状态：目标期间不存在返回 409（`TARGET_PERIOD_NOT_FOUND`），目标期间已关账返回 409（`TARGET_PERIOD_CLOSED`）。
+- 系统在同一事务内按期间编码升序对源期间和目标期间加行级悲观锁，汇总凭证日期不晚于源期间结束日的全部已入账（`POSTED`）凭证中资产（`ASSET`）、负债（`LIABILITY`）和所有者权益（`EQUITY`）科目的累计借贷发生额；收入（`REVENUE`）和费用（`EXPENSE`）科目不参与。
+- 每个期末余额不为零的科目生成一条期初分录，方向和金额与期末余额一致（借方余额借记，贷方余额贷记），分录按科目编码升序排列；整张凭证借贷必然平衡，金额统一保留两位小数。
+- 期初凭证日期固定为目标期间第一天（跨年时为下一年 1 月 1 日），状态为 `POSTED`，摘要为“期初余额结转自 {源期间编码}”，响应通过 `balanceCarryForwardPeriodCode` 标识其来源期间。
+- 如果资产、负债和所有者权益科目余额全部为零，不生成空凭证，返回 409 和稳定业务错误码 `BALANCE_ALREADY_CLEARED`。
+- 同一源期间只能生成一张期初凭证（`balance_carry_forward_period_code` 数据库唯一约束）：重复请求（即使目标期间随后被关账）直接返回第一次生成的凭证，不重复写入；并发重复请求由唯一约束兜底，最多落一张凭证。
+- 任何校验失败都在同一事务内回滚，不会留下凭证或分录数据。
+- 已经生成期初凭证的源期间不能再反关账，返回 409 和稳定业务错误码 `PERIOD_REOPEN_NOT_ALLOWED`，避免下期期初数据与源期间失去一致性。
+- 余额结转、源期间反关账和目标期间关账通过同一套数据库事务和期间行级悲观锁串行化：结转只能基于仍为 `CLOSED` 的源期间、只能写入仍为 `OPEN` 的目标期间。并发结束后不会出现源期间已反关账但期初凭证已生成，或目标期间已关账后仍写入期初凭证的情况；失败的一方在状态恢复后（如重新关账/反关账目标期间）可以补做结转。
+
+发起余额结转：
+
+    curl -X POST http://localhost:8080/api/periods/2026-09/balance-carry-forward
+
 ## 错误响应
 
 所有错误统一返回 JSON，不暴露堆栈，例如：
@@ -240,4 +264,4 @@ cc-finance 是一个面向企业财务场景的 Spring Boot 后端项目，当�
       "path": "/api/vouchers/JV-99999999"
     }
 
-主要业务错误码：`ACCOUNT_ALREADY_EXISTS`、`ACCOUNT_NOT_FOUND`、`ACCOUNT_DISABLED`、`ACCOUNT_NOT_EQUITY`、`ACCOUNT_BALANCE_NOT_ZERO`、`PERIOD_ALREADY_EXISTS`、`PERIOD_NOT_FOUND`、`PERIOD_CLOSED`、`PERIOD_PROFIT_LOSS_NOT_CLEARED`、`PERIOD_REOPEN_NOT_ALLOWED`、`PROFIT_LOSS_ALREADY_CLEARED`、`PROFIT_LOSS_CARRY_FORWARD_CONFLICT`、`VOUCHER_NOT_BALANCED`、`VOUCHER_NOT_FOUND`、`VOUCHER_ALREADY_REVERSED`、`REVERSAL_NOT_ALLOWED`、`IDEMPOTENCY_CONFLICT`、`VALIDATION_ERROR`。
+主要业务错误码：`ACCOUNT_ALREADY_EXISTS`、`ACCOUNT_NOT_FOUND`、`ACCOUNT_DISABLED`、`ACCOUNT_NOT_EQUITY`、`ACCOUNT_BALANCE_NOT_ZERO`、`PERIOD_ALREADY_EXISTS`、`PERIOD_NOT_FOUND`、`PERIOD_CLOSED`、`PERIOD_NOT_CLOSED`、`PERIOD_PROFIT_LOSS_NOT_CLEARED`、`PERIOD_REOPEN_NOT_ALLOWED`、`TARGET_PERIOD_NOT_FOUND`、`TARGET_PERIOD_CLOSED`、`BALANCE_ALREADY_CLEARED`、`PROFIT_LOSS_ALREADY_CLEARED`、`PROFIT_LOSS_CARRY_FORWARD_CONFLICT`、`VOUCHER_NOT_BALANCED`、`VOUCHER_NOT_FOUND`、`VOUCHER_ALREADY_REVERSED`、`REVERSAL_NOT_ALLOWED`、`IDEMPOTENCY_CONFLICT`、`VALIDATION_ERROR`。

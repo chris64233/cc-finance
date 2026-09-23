@@ -20,6 +20,10 @@ public interface VoucherRepository extends JpaRepository<JournalVoucher, Long> {
 
     Optional<JournalVoucher> findByCarryForwardPeriodCode(String carryForwardPeriodCode);
 
+    Optional<JournalVoucher> findByBalanceCarryForwardPeriodCode(String balanceCarryForwardPeriodCode);
+
+    boolean existsByBalanceCarryForwardPeriodCode(String balanceCarryForwardPeriodCode);
+
     @Query("select distinct v from JournalVoucher v left join fetch v.entries "
             + "where v.status = com.ccfinance.voucher.VoucherStatus.POSTED "
             + "and v.voucherDate between :startDate and :endDate")
@@ -48,4 +52,17 @@ public interface VoucherRepository extends JpaRepository<JournalVoucher, Long> {
     List<AccountPeriodBalanceTotal> sumPostedProfitLossTotalsByAccountBetween(
             @Param("startDate") LocalDate startDate,
             @Param("endDate") LocalDate endDate);
+
+    @Query("select new com.ccfinance.voucher.AccountPeriodBalanceTotal(e.accountCode, "
+            + "sum(case when e.direction = com.ccfinance.voucher.Direction.DEBIT then e.amount end), "
+            + "sum(case when e.direction = com.ccfinance.voucher.Direction.CREDIT then e.amount end)) "
+            + "from JournalEntry e join e.voucher v, Account a "
+            + "where a.code = e.accountCode "
+            + "and a.category in (com.ccfinance.account.AccountCategory.ASSET, "
+            + "com.ccfinance.account.AccountCategory.LIABILITY, "
+            + "com.ccfinance.account.AccountCategory.EQUITY) "
+            + "and v.status = com.ccfinance.voucher.VoucherStatus.POSTED "
+            + "and v.voucherDate <= :endDate "
+            + "group by e.accountCode")
+    List<AccountPeriodBalanceTotal> sumPostedBalanceSheetTotalsUpTo(@Param("endDate") LocalDate endDate);
 }

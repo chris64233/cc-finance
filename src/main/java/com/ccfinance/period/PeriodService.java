@@ -95,6 +95,10 @@ public class PeriodService {
             throw new ApiException(HttpStatus.CONFLICT, "PERIOD_REOPEN_NOT_ALLOWED",
                     "只能重新打开最新的已关账期间，存在更晚的已关账期间: " + latest);
         }
+        if (voucherRepository.existsByBalanceCarryForwardPeriodCode(periodCode)) {
+            throw new ApiException(HttpStatus.CONFLICT, "PERIOD_REOPEN_NOT_ALLOWED",
+                    "该期间已生成下期期初余额结转凭证，不能反关账: " + periodCode);
+        }
         period.reopen(request.reason().trim());
         return PeriodResponse.from(periodRepository.saveAndFlush(period));
     }

@@ -22,6 +22,7 @@ public interface PeriodRepository extends JpaRepository<AccountingPeriod, Long> 
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select p from AccountingPeriod p where p.periodCode > :periodCode"
-            + " and p.status = com.ccfinance.period.PeriodStatus.CLOSED")
+            + " and p.status = com.ccfinance.period.PeriodStatus.CLOSED"
+            + " order by p.periodCode asc")
     List<AccountingPeriod> findLaterClosedPeriodsForUpdate(@Param("periodCode") String periodCode);
 }
