@@ -22,6 +22,7 @@ public record VoucherResponse(
         String carryForwardPeriodCode,
         String carryForwardEquityAccountCode,
         String balanceCarryForwardPeriodCode,
+        String correctionOfVoucherNo,
         List<EntryResponse> entries) {
 
     public static VoucherResponse from(JournalVoucher voucher) {
@@ -43,6 +44,7 @@ public record VoucherResponse(
                 voucher.getCarryForwardPeriodCode(),
                 voucher.getCarryForwardEquityAccountCode(),
                 voucher.getBalanceCarryForwardPeriodCode(),
+                voucher.getCorrectionOfVoucherNo(),
                 voucher.getEntries().stream().map(EntryResponse::from).toList());
     }
 }

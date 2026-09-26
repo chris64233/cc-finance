@@ -115,6 +115,8 @@ cc-finance 是一个面向企业财务场景的 Spring Boot 后端项目，当�
 | POST | `/api/vouchers` | 凭证入账（同一事务写入凭证与分录） |
 | GET | `/api/vouchers/{voucherNo}` | 按凭证号查询完整凭证，不存在返回 404 |
 | POST | `/api/vouchers/{voucherNo}/reversal` | 按原凭证号发起冲销，生成借贷方向相反的 POSTED 凭证 |
+| POST | `/api/vouchers/{voucherNo}/correction` | 按原凭证号发起更正，一次事务生成反向冲销凭证和替换凭证 |
+| GET | `/api/vouchers/{voucherNo}/correction` | 查询凭证参与的更正结果及关联凭证，未参与更正返回 404 |
 
 入账规则：
 
@@ -167,6 +169,38 @@ cc-finance 是一个面向企业财务场景的 Spring Boot 后端项目，当�
     curl -X POST http://localhost:8080/api/vouchers/JV-00000001/reversal \
       -H 'Content-Type: application/json' \
       -d '{"bizKey": "REV-001", "voucherDate": "2026-09-20", "summary": "冲销销售回款"}'
+
+### 凭证更正
+
+更正规则：
+
+- 按原凭证号发起更正，请求传入新的 `bizKey`、更正日期 `voucherDate`、可选摘要 `summary`（缺省时替换凭证摘要自动生成“更正 {原凭证号}”）和替换凭证的分录明细 `entries`（校验规则与凭证入账一致：至少两条分录、借贷平衡、科目存在且启用）。
+- 更正是一次原子操作：在同一事务内保留原凭证不变，生成一张反向冲销凭证（分录顺序、科目和金额与原凭证一致，借贷方向相反，摘要为“更正冲销 {原凭证号}”）和一张替换凭证（按请求分录入账），并写入一条更正记录保存原凭证、冲销凭证、替换凭证三者的关联；任何校验或写入失败都整体回滚，不会留下单边冲销或未关联的替换凭证。
+- 只有普通且未被冲销、未被更正的已入账凭证可以更正：冲销凭证、损益结转凭证和余额结转凭证不能作为更正对象（返回 409，`CORRECTION_NOT_ALLOWED`）；已生成冲销凭证的凭证不能更正（返回 409，`VOUCHER_ALREADY_REVERSED`）；同一原凭证最多成功更正一次（重复更正返回 409，`VOUCHER_ALREADY_CORRECTED`）；原凭证不存在返回 404。
+- 更正日期对应的会计期间必须存在且处于 `OPEN` 状态：期间不存在返回 422，期间已关账返回 409；反向冲销凭证和替换凭证的凭证日期均为更正日期。
+- `bizKey` 为更正业务唯一号（数据库唯一约束）：相同 `bizKey` 且请求内容一致时返回首次更正结果（幂等）；`bizKey` 复用但内容不同，或用新 `bizKey` 再次更正同一原凭证时返回 409。更正记录对 `bizKey`、原凭证号、冲销凭证号、替换凭证号均建有唯一约束，并发请求只会成功产生一组结果。
+- 更正与同一期间的凭证入账、期间关账复用同一套数据库事务和期间行级悲观锁：更正与关账竞争时只会形成完整更正或完成关账其中一种一致结果，不会出现期间已关账却写入半边更正数据的情况。
+- 更正成功后原凭证不能再单独冲销（其冲销位置已被更正的反向冲销凭证占用，返回 409，`VOUCHER_ALREADY_REVERSED`）；替换凭证是普通已入账凭证，查询凭证时通过 `correctionOfVoucherNo` 字段标识其更正来源。
+- 查询更正：`GET /api/vouchers/{voucherNo}/correction` 可从原凭证、冲销凭证、替换凭证任意一方查询到同一条更正记录（`bizKey`、`originalVoucherNo`、`reversalVoucherNo`、`replacementVoucherNo`、`createdAt`）；凭证不存在返回 404（`VOUCHER_NOT_FOUND`），凭证未参与任何更正返回 404（`CORRECTION_NOT_FOUND`）。
+- 冲销凭证和替换凭证都是 `POSTED` 凭证，与普通凭证一样参与试算平衡、关账校验、损益结转和余额结转的统计。
+
+凭证更正：
+
+    curl -X POST http://localhost:8080/api/vouchers/JV-00000001/correction \
+      -H 'Content-Type: application/json' \
+      -d '{
+        "bizKey": "COR-001",
+        "voucherDate": "2026-09-20",
+        "summary": "更正销售回款金额",
+        "entries": [
+          {"accountCode": "1001", "direction": "DEBIT", "amount": 1200.00},
+          {"accountCode": "6001", "direction": "CREDIT", "amount": 1200.00}
+        ]
+      }'
+
+查询更正结果：
+
+    curl http://localhost:8080/api/vouchers/JV-00000001/correction
 
 ### 发生额试算平衡表
 
@@ -266,4 +300,4 @@ cc-finance 是一个面向企业财务场景的 Spring Boot 后端项目，当�
       "path": "/api/vouchers/JV-99999999"
     }
 
-主要业务错误码：`ACCOUNT_ALREADY_EXISTS`、`ACCOUNT_NOT_FOUND`、`ACCOUNT_DISABLED`、`ACCOUNT_NOT_EQUITY`、`ACCOUNT_BALANCE_NOT_ZERO`、`PERIOD_ALREADY_EXISTS`、`PERIOD_NOT_FOUND`、`PERIOD_CLOSED`、`PERIOD_NOT_CLOSED`、`PERIOD_PROFIT_LOSS_NOT_CLEARED`、`PERIOD_REOPEN_NOT_ALLOWED`、`PROFIT_LOSS_ALREADY_CLEARED`、`PROFIT_LOSS_CARRY_FORWARD_CONFLICT`、`BALANCE_ALREADY_CLEARED`、`BALANCE_CARRY_FORWARD_NOT_BALANCED`、`BALANCE_CARRY_FORWARD_CONFLICT`、`VOUCHER_NOT_BALANCED`、`VOUCHER_NOT_FOUND`、`VOUCHER_ALREADY_REVERSED`、`REVERSAL_NOT_ALLOWED`、`IDEMPOTENCY_CONFLICT`、`VALIDATION_ERROR`。
+主要业务错误码：`ACCOUNT_ALREADY_EXISTS`、`ACCOUNT_NOT_FOUND`、`ACCOUNT_DISABLED`、`ACCOUNT_NOT_EQUITY`、`ACCOUNT_BALANCE_NOT_ZERO`、`PERIOD_ALREADY_EXISTS`、`PERIOD_NOT_FOUND`、`PERIOD_CLOSED`、`PERIOD_NOT_CLOSED`、`PERIOD_PROFIT_LOSS_NOT_CLEARED`、`PERIOD_REOPEN_NOT_ALLOWED`、`PROFIT_LOSS_ALREADY_CLEARED`、`PROFIT_LOSS_CARRY_FORWARD_CONFLICT`、`BALANCE_ALREADY_CLEARED`、`BALANCE_CARRY_FORWARD_NOT_BALANCED`、`BALANCE_CARRY_FORWARD_CONFLICT`、`VOUCHER_NOT_BALANCED`、`VOUCHER_NOT_FOUND`、`VOUCHER_ALREADY_REVERSED`、`VOUCHER_ALREADY_CORRECTED`、`REVERSAL_NOT_ALLOWED`、`CORRECTION_NOT_ALLOWED`、`CORRECTION_NOT_FOUND`、`IDEMPOTENCY_CONFLICT`、`VALIDATION_ERROR`。

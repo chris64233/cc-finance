@@ -28,7 +28,9 @@ import jakarta.persistence.UniqueConstraint;
         @UniqueConstraint(name = "uk_journal_vouchers_carry_forward_period",
                 columnNames = "carry_forward_period_code"),
         @UniqueConstraint(name = "uk_journal_vouchers_balance_carry_forward_period",
-                columnNames = "balance_carry_forward_period_code")
+                columnNames = "balance_carry_forward_period_code"),
+        @UniqueConstraint(name = "uk_journal_vouchers_correction_of",
+                columnNames = "correction_of_voucher_no")
 })
 public class JournalVoucher {
 
@@ -77,6 +79,9 @@ public class JournalVoucher {
     @Column(name = "balance_carry_forward_period_code", length = 7, updatable = false)
     private String balanceCarryForwardPeriodCode;
 
+    @Column(name = "correction_of_voucher_no", length = 32, updatable = false)
+    private String correctionOfVoucherNo;
+
     @OneToMany(mappedBy = "voucher", cascade = CascadeType.ALL, orphanRemoval = true)
     @OrderBy("lineNo ASC")
     private List<JournalEntry> entries = new ArrayList<>();
@@ -117,6 +122,10 @@ public class JournalVoucher {
 
     public void markAsBalanceCarryForward(String sourcePeriodCode) {
         this.balanceCarryForwardPeriodCode = sourcePeriodCode;
+    }
+
+    public void markAsCorrectionOf(String originalVoucherNo) {
+        this.correctionOfVoucherNo = originalVoucherNo;
     }
 
     public Long getId() {
@@ -173,6 +182,10 @@ public class JournalVoucher {
 
     public String getBalanceCarryForwardPeriodCode() {
         return balanceCarryForwardPeriodCode;
+    }
+
+    public String getCorrectionOfVoucherNo() {
+        return correctionOfVoucherNo;
     }
 
     public List<JournalEntry> getEntries() {

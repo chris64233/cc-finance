@@ -9,6 +9,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.ccfinance.voucher.dto.CorrectionRequest;
+import com.ccfinance.voucher.dto.CorrectionResponse;
 import com.ccfinance.voucher.dto.ReversalRequest;
 import com.ccfinance.voucher.dto.VoucherRequest;
 import com.ccfinance.voucher.dto.VoucherResponse;
@@ -41,5 +43,17 @@ public class VoucherController {
     public VoucherResponse reverse(@PathVariable String voucherNo,
             @Valid @RequestBody ReversalRequest request) {
         return voucherService.reverse(voucherNo, request);
+    }
+
+    @PostMapping("/{voucherNo}/correction")
+    @ResponseStatus(HttpStatus.CREATED)
+    public CorrectionResponse correct(@PathVariable String voucherNo,
+            @Valid @RequestBody CorrectionRequest request) {
+        return voucherService.correct(voucherNo, request);
+    }
+
+    @GetMapping("/{voucherNo}/correction")
+    public CorrectionResponse getCorrection(@PathVariable String voucherNo) {
+        return voucherService.getCorrection(voucherNo);
     }
 }
