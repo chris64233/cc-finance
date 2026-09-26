@@ -5,14 +5,21 @@ import java.util.List;
 import java.util.Optional;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+
+import jakarta.persistence.LockModeType;
 
 public interface VoucherRepository extends JpaRepository<JournalVoucher, Long> {
 
     Optional<JournalVoucher> findByBizKey(String bizKey);
 
     Optional<JournalVoucher> findByVoucherNo(String voucherNo);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select v from JournalVoucher v where v.voucherNo = :voucherNo")
+    Optional<JournalVoucher> findByVoucherNoForUpdate(@Param("voucherNo") String voucherNo);
 
     Optional<JournalVoucher> findByReversalOfVoucherNo(String reversalOfVoucherNo);
 
